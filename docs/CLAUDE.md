@@ -57,6 +57,8 @@ Bottom-up. Each block reads/writes the gold table via stable contracts; any bloc
 
 Cross-cutting: **event log** (from Sprint 3), **Unity Catalog** governance/lineage (from Sprint 0).
 
+**Agentic layer (later sprints only):** AI agents do the fuzzy, tool-using work the spine cannot — they **articulate, extract, orchestrate**, and call deterministic tools for anything that must be correct. They NEVER compute the spine (clock, classifier, burden/eligibility, compliance, models stay deterministic and auditable). Four agents: Statement Analyst + Data Steward (S7, extraction), Advisory Composer + Structure Advisor (S8, articulate/orchestrate). All grounded in computed facts, logged, and gated by compliance. No agents before the spine exists.
+
 ---
 
 ## 4. Tech stack (use native components; don't hand-build what exists)
@@ -112,8 +114,9 @@ Medallion layers in Unity Catalog: `mri.bronze.*`, `mri.silver.*`, `mri.gold.*`.
 | S4 | Activation + Book Health | |
 | S5 | Offer Engine | |
 | S6 | Prediction | |
-| S7 | Advisory comms + compliance | |
-| S8+ | Merchant app | |
+| S7 | Agentic extraction (Statement Analyst + Data Steward) | |
+| S8 | Advisory comms + agents (Composer, Structure Advisor) + compliance | |
+| S9+ | Merchant app | |
 
 **Gates before S0 coding:** G1 data audit (in progress), G2 clock math (RESOLVED — Appendix A), G3 rung rules (RESOLVED — Appendix B), G4 environment + data-rights (confirm).
 

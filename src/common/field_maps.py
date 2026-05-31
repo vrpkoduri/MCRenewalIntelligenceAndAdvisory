@@ -121,6 +121,101 @@ OFFERS_MAP: tuple[FieldSpec, ...] = (
     FieldSpec("is_deleted", "bool", "Offer__c.IsDeleted", Verdict.CARRY, "carried raw; not filtered at silver"),
 )
 
+# =============================================================================
+# GOLD layer (S1) — identity-resolved canonical Deal Table + merchant dimension.
+# Source labels here are NOT Salesforce objects but the GOLD provenance:
+#   "silver.deals.<col>"  carried from the silver Deal projection
+#   "derive:<desc>"       computed in the S1 gold transform
+#   "merchant.<col>"      pulled from the resolved merchant dimension
+#   "aatm:<col>"          build-time read-only enrichment from AATM (C-014)
+#   "gap"                 Must-capture — no S1 source; null + *_is_missing flag
+#   "defer:S2"            Derive field that needs the live clock (S2) — null in S1
+# The 24 Deal Table fields below are the Data Contract "Deal Table" sheet, in
+# order, so gold.deals conforms to the contract (test_contract_consistency).
+# =============================================================================
+
+# silver.deals + S1 derivations -> mca_mri.gold.deals (canonical Deal Table).
+DEAL_TABLE_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("deal_id", "string", "silver.deals.opportunity_id", Verdict.HAVE, "PK"),
+    FieldSpec("merchant_id", "string", "derive:identity crosswalk (D-101)", Verdict.DERIVE, "stable MRI id; non-null on 100% of funded book (AccountId 100% set)"),
+    FieldSpec("funder", "string", "silver.deals.funder", Verdict.HAVE),
+    FieldSpec("iso_rep", "string", "gap", Verdict.HAVE, "not carried to silver.deals; null + iso_rep_is_missing in S1 (FU-101 backfill from bronze.opportunity)"),
+    FieldSpec("funded_date", "date", "silver.deals.funded_date", Verdict.HAVE),
+    FieldSpec("funded_amount", "decimal", "silver.deals.funded_amount", Verdict.HAVE),
+    FieldSpec("factor_rate", "decimal", "silver.deals.factor_rate", Verdict.HAVE),
+    FieldSpec("term_months", "decimal", "derive:Appendix A.3", Verdict.DERIVE, "static: daily num_payments/21.7, weekly /4.33; null + term_months_is_missing when inputs absent"),
+    FieldSpec("num_payments", "int", "silver.deals.num_payments", Verdict.HAVE),
+    FieldSpec("payment_frequency", "enum", "silver.deals.payment_frequency", Verdict.HAVE),
+    FieldSpec("payment_amount", "decimal", "silver.deals.payment_amount", Verdict.HAVE),
+    FieldSpec("holdback_pct", "decimal", "defer:S2", Verdict.DERIVE, "needs est revenue (Must-capture) -> S2 clock; null in S1"),
+    FieldSpec("total_payback", "decimal", "silver.deals.payback_amount", Verdict.HAVE, "contract total_payback = silver payback_amount (RTR anchor)"),
+    FieldSpec("deal_type", "enum", "silver.deals.deal_type", Verdict.HAVE, "New Business / Renewal / Buyout — trusted (CLAUDE.md 2.5)"),
+    FieldSpec("is_renewal_of", "string", "derive:renewal chain (D-103)", Verdict.DERIVE, "deal_id of immediately-prior same-merchant deal by funded_date; null for New Business / first deal"),
+    FieldSpec("disclosed_positions_cnt", "int", "gap", Verdict.MUST_CAPTURE, "Positions__c 0% on funded book; null + flag (never 0)"),
+    FieldSpec("fico", "int", "silver.deals.fico", Verdict.HAVE, "0/blank already MISSING in silver"),
+    FieldSpec("months_in_business", "int", "silver.deals.months_in_business", Verdict.HAVE),
+    FieldSpec("disclosed_balance_total", "decimal", "gap", Verdict.MUST_CAPTURE, "null + flag"),
+    FieldSpec("net_funded", "decimal", "gap", Verdict.MUST_CAPTURE, "null + flag"),
+    FieldSpec("governing_state", "string", "merchant.governing_state", Verdict.HAVE, "merchant dimension governing_state; fallback silver.deals.state_of_incorporation"),
+    FieldSpec("prior_factor_rate", "decimal", "derive:prior deal factor_rate (D-103)", Verdict.DERIVE, "factor_rate of is_renewal_of deal; null when no prior"),
+    FieldSpec("status", "string", "derive:field_history StageName", Verdict.DERIVE, "latest StageName transition from silver.field_history; fallback silver.deals.stage"),
+    FieldSpec("personal_guarantee", "bool", "gap", Verdict.MUST_CAPTURE, "null + flag"),
+)
+
+# Account cluster (identity) + static profile -> mca_mri.gold.merchants.
+# S1 SEED ONLY: identity + static profile + the AATM cross-system bridge.
+# Feature/clock/prediction columns of the 66-field Merchant Gold Table accrete
+# in S2+ (reserved, not built here).
+MERCHANT_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "derive:identity crosswalk (D-101)", Verdict.DERIVE, "PK; stable MRI id"),
+    FieldSpec("azure_merchant_id", "string", "aatm:merchants.azure_merchant_id via tax_id (C-014)", Verdict.CARRY, "DM Merchant Id — cross-system join key; ~84% fill; null + azure_merchant_id_is_missing"),
+    FieldSpec("business_name", "string", "merchant.Account.Name", Verdict.HAVE, "representative name across collapsed accounts (first non-null by sf_id)"),
+    FieldSpec("principal_name", "string", "gap", Verdict.HAVE, "no reliable Account field; null + principal_name_is_missing (resolve from Contact later)"),
+    FieldSpec("governing_state", "string", "merchant.norm(Business_State__c|BillingState)", Verdict.HAVE, "normalized 2-letter"),
+    FieldSpec("tax_id", "string", "merchant.norm(Key_Reference_Tax_Id__c|Tax_ID__c)", Verdict.CARRY, "normalized; static profile + the AATM bridge key; 96.7% populated"),
+    FieldSpec("business_start_date", "date", "merchant.Account.Business_Start__c", Verdict.HAVE, "tenure source; tenure_days math is S2"),
+    FieldSpec("industry", "string", "merchant.Account.Industry", Verdict.CARRY, "raw; contract industry_vertical (taxonomy) is Derive -> S5"),
+    FieldSpec("sf_account_count", "int", "derive:cluster size", Verdict.DERIVE, "# SF Accounts collapsed into this merchant (collapse visibility)"),
+    FieldSpec("match_reason", "string", "derive:auto-merge tiers", Verdict.DERIVE, "sorted AUTO tiers that formed the cluster (master_record/tax_id); blank = singleton"),
+)
+
+# Persisted crosswalk -> mca_mri.gold.merchant_crosswalk (D-101). One row per SF
+# Account on the funded book; never re-keys (see common.identity.keys).
+MERCHANT_CROSSWALK_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_sf_id", "string", "bronze.account.Id", Verdict.HAVE, "PK; SF Account Id"),
+    FieldSpec("merchant_id", "string", "derive:identity crosswalk (D-101)", Verdict.DERIVE, "stable MRI id this account maps to"),
+)
+
+# Gold DQ / derived columns (beyond the contract field set). (col, dtype).
+GOLD_DEALS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("iso_rep_is_missing", "bool"),
+    ("term_months_is_missing", "bool"),
+    ("renewal_unlinkable", "bool"),  # Renewal/Buyout with no linkable prior same-merchant deal
+    ("disclosed_positions_cnt_is_missing", "bool"),
+    ("disclosed_balance_total_is_missing", "bool"),
+    ("net_funded_is_missing", "bool"),
+    ("personal_guarantee_is_missing", "bool"),
+)
+
+GOLD_MERCHANTS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("azure_merchant_id_is_missing", "bool"),
+    ("principal_name_is_missing", "bool"),
+    ("tax_id_is_missing", "bool"),
+)
+
+
+def deal_table_columns() -> list[str]:
+    return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
+
+
+def merchant_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_MAP] + [c for c, _ in GOLD_MERCHANTS_DQ_COLUMNS]
+
+
+def merchant_crosswalk_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_CROSSWALK_MAP]
+
+
 # DQ-derived columns added by the silver transform (not direct source maps).
 # (col, dtype). Kept here so schema + tests stay in sync with the transform.
 DEALS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (

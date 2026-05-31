@@ -8,14 +8,34 @@ narrative roadmap is `Morgan_Cash_Build_Plan_Sprint_Roadmap.docx`; this is the l
 | Sprint | Block | Status | Plan | Notes |
 |---|---|---|---|---|
 | **S0** | Ingestion → silver | **Complete** | [SPRINT_0_PLAN](sprints/SPRINT_0_PLAN.md) | Bronze **live** (4 SF objects, G1 ✅); **all 3 silver tables in PROD 2026-05-31** — `deals` (3,959), `offers` (57,586), `field_history` (220,172); every table reconciles to bronze, schema + no-surface green. Remaining: FU-001/FU-002 (deferred, non-blocking) |
-| S1 | Identity + Deal table | Not started | — | AATM IP exists (`lakebase_aatm_*`) for reuse |
+| S1 | Identity + Deal table | **Complete — in PROD `gold` (2026-05-31)** | [SPRINT_1_PLAN](sprints/SPRINT_1_PLAN.md) | **D-101…D-105 signed; C-013 (PORT AATM) + C-014 (own `merchant_id` + carry `azure_merchant_id`).** `common/identity/{normalize,match,keys}` + `schemas/gold.py` + gold field maps + transforms `gold_{merchants,deals}.py`. **106 tier-1 green.** **Tier-2 recon PASSED on `gold_test` then PROMOTED TO PROD (`failures: []` both):** `gold.deals` **3,959**, `gold.merchants` **2,125**, `gold.merchant_crosswalk` **2,167**; 0 null merchant_id, collapse 1.0198, azure fill **81.4%**, gaps null+flagged, FU-002 Wolf=1. |
 | S2 | Features + clock (Appendix A) | Not started | — | `src/common/clock` home reserved |
 | S3 | Rung classifier + state machine + event log (Appendix B) | Not started | — | `src/common/rung`, `eventlog` reserved |
 | S4 | Activation + Book Health | Not started | — | |
 | S5 | Offer Engine | Not started | — | `mca_funders` = reuse dataset |
 | S6 | Prediction | Not started | — | |
-| S7 | Advisory comms + compliance | Not started | — | |
-| S8+ | Merchant app | Not started | — | |
+| S7 | Agentic extraction (Statement Analyst + Data Steward) | Not started | — | agents extract only; never compute the spine |
+| S8 | Advisory comms + agents (Composer, Structure Advisor) + compliance | Not started | — | compliance gate is first-class |
+| S9+ | Merchant app | Not started | — | renderer over Lakebase |
+
+## Sprint 1 — progress detail
+
+**Decisions:** D-101…D-104 approved 2026-05-31; D-105 resolved via **C-013** (PORT the AATM matching IP); **C-014** (mint own `merchant_id`, carry AATM `azure_merchant_id` via the normalized-tax_id bridge).
+
+**Done (code, 2026-05-31):**
+- **Identity IP** (`src/common/identity/`): `normalize.py` (tax_id/business_name/phone/state — ported from AATM + `normalize_state`); `match.py` (`AccountKeys`, union-find `cluster_accounts` — MasterRecordId + exact tax_id AUTO-merge; phone + name/state flagged candidates per D-102; `account_match_keys` Spark adapter); `keys.py` (`assign_merchant_ids` persisted-crosswalk stability D-101 + `match_reason_by_merchant`).
+- **Gold schemas** (`src/common/schemas/gold.py`) + **field maps** (`DEAL_TABLE_MAP` = the 24 contract Deal-Table fields in order, `MERCHANT_MAP`, `MERCHANT_CROSSWALK_MAP`, gold DQ columns) + `GoldTable`/`Identity` constants + `Thresholds.WEEKS_PER_MONTH=4.33`.
+- **Transforms**: `src/transform/gold_merchants.py` (crosswalk + merchant dimension + AATM `azure_merchant_id` enrichment, optional/read-only) and `src/transform/gold_deals.py` (24-field Deal Table; `term_months` Appendix A.3; renewal chain D-103; `status` from field_history; Must-capture gaps null + `*_is_missing`).
+- **Tests: 106 tier-1 green** (normalize 37, match 9, keys 8, gold maps 11, + existing).
+
+**Done (cloud, 2026-05-31) — tier-2 gold reconciliation PASSED (`gold_test`):**
+- Ran `build_gold_merchants` + `build_gold_deals` into `mca_mri.gold_test.*` on **serverless** (one-time job submit; src + `recon_gold` staged as Workspace files, `run_tier2_gold` as a notebook — no bundle deploy; staging cleaned up after). Test code in `tests/tier2/recon_gold.py`.
+- **Hard checks all green (`failures: []`):** `gold.deals` = **3,959 == silver.deals 3,959**; `deal_id` unique; **0 deals with null `merchant_id`**; crosswalk covers every funded Account; schemas == `deal_table_schema()`/`merchant_schema()`/`merchant_crosswalk_schema()`; **no-surface guard clean** on `gold.deals`; all 4 Must-capture gaps 100% null with `*_is_missing` 100% true.
+- **Identity rollups:** **2,125 merchants** from ~2,167 funded Accounts (collapse ratio **1.0198**); merge tiers = 18 `tax_id` clusters + 2,107 singletons (no MasterRecordId merges on the funded book). **`azure_merchant_id` fill = 81.4%** (matches the C-014 ~84% tax_id-bridge estimate). **FU-002:** "Wolf Corporation" resolves to exactly 1 merchant_id (other 3 reference names live on `Opportunity.Name`, not `Account.Name` — surfaced, not failed).
+- **Derivation rollups (honest, no faking):** `term_months` 3,947 populated / 12 flagged missing; renewals 1,854 → 1,351 linked + 503 `renewal_unlinkable`; `prior_factor_rate` 1,276; gap columns 0 non-null.
+- **Prod `gold` promotion DONE (2026-05-31, approved):** re-ran the same verified driver with `schema=gold, allow_prod=true` — **recon identical (`failures: []`)**. Prod row counts: `mca_mri.gold.deals` **3,959**, `gold.merchants` **2,125**, `gold.merchant_crosswalk` **2,167**. Workspace staging cleaned up. **S1 identity + Deal-Table path COMPLETE.**
+
+**S1 exit criteria met.** Follow-ups (non-blocking): calibrate the renewal-chain vs any SF link field (503 `renewal_unlinkable` to investigate in S2); FU-002 fully closeable once principal/Account-name resolution lands; `azure_merchant_id` 81.4% vs C-014's profiled 84% — small gap to reconcile (test-compute tax_id normalization parity).
 
 ## Sprint 0 — progress detail
 

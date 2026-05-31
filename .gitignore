@@ -26,3 +26,7 @@ secrets.*
 # Local artifacts
 docs/files.zip
 /tmp/
+
+# Transient doc-staging (content promoted into docs/ root; see DECISIONS C-015)
+docs/files_new.zip
+docs/files_new/
