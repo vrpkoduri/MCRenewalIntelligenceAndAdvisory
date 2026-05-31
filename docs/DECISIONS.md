@@ -35,6 +35,16 @@ Append-only record of decisions you've signed off on, and open decisions awaitin
 
 **D-101…D-104 approved 2026-05-31** ("Approve all recommendations") — recommendations adopted as written; build proceeding. **D-105 resolved — see C-013.** (D-002 resolved — see C-011 + C-012.)
 
+**Sprint 2 (Feature Layer + Amortization Clock) — sign-off needed before build** (detail in [SPRINT_2_PLAN](sprints/SPRINT_2_PLAN.md) §8):
+
+| ID | Opened | Question | Recommendation |
+|---|---|---|---|
+| D-201 | 2026-05-31 | **Clock output shape/placement** — separate point-in-time tables vs append columns in place. | Separate `gold.deal_clock` + `gold.merchant_clock` keyed `(id, clock_run_date)`, append-only, with a `current` view (auditable daily recompute; no destructive overwrite). |
+| D-202 | 2026-05-31 | **True-split / holdback handling** (A.6). | Off by default (fixed-ACH is the confirmed common case); build the estimated-via-revenue split path only if the audit finds split deals. |
+| D-203 | 2026-05-31 | **Servicing/bank feed availability.** | Confirm no feed today → v1 runs the estimated path for the whole book; `actual` path wired but inert until a feed lands. |
+| D-204 | 2026-05-31 | **Business-day calendar / holidays** for the daily count. | Single US Federal holiday set (M–F minus holidays); confirm source or whether plain M–F is acceptable for v1. |
+| D-205 | 2026-05-31 | **Funder renewal-threshold lookup** in `mca_funders`. | Use per-funder threshold where present; default 55% until wired. Need dataset pointer + field. |
+
 ## Resolved (was open)
 
 | ID | Opened | Question | Resolution |

@@ -9,7 +9,7 @@ narrative roadmap is `Morgan_Cash_Build_Plan_Sprint_Roadmap.docx`; this is the l
 |---|---|---|---|---|
 | **S0** | Ingestion → silver | **Complete** | [SPRINT_0_PLAN](sprints/SPRINT_0_PLAN.md) | Bronze **live** (4 SF objects, G1 ✅); **all 3 silver tables in PROD 2026-05-31** — `deals` (3,959), `offers` (57,586), `field_history` (220,172); every table reconciles to bronze, schema + no-surface green. Remaining: FU-001/FU-002 (deferred, non-blocking) |
 | S1 | Identity + Deal table | **Complete — in PROD `gold` (2026-05-31)** | [SPRINT_1_PLAN](sprints/SPRINT_1_PLAN.md) | **D-101…D-105 signed; C-013 (PORT AATM) + C-014 (own `merchant_id` + carry `azure_merchant_id`).** `common/identity/{normalize,match,keys}` + `schemas/gold.py` + gold field maps + transforms `gold_{merchants,deals}.py`. **106 tier-1 green.** **Tier-2 recon PASSED on `gold_test` then PROMOTED TO PROD (`failures: []` both):** `gold.deals` **3,959**, `gold.merchants` **2,125**, `gold.merchant_crosswalk` **2,167**; 0 null merchant_id, collapse 1.0198, azure fill **81.4%**, gaps null+flagged, FU-002 Wolf=1. |
-| S2 | Features + clock (Appendix A) | Not started | — | `src/common/clock` home reserved |
+| S2 | Features + clock (Appendix A) | **Plan drafted — awaiting sign-off (D-201…D-205)** | [SPRINT_2_PLAN](sprints/SPRINT_2_PLAN.md) | `src/common/clock` home reserved. THE-core-principle sprint: daily live-recompute of balance/paydown/eligible-date/closure; never trust SF stored balances. |
 | S3 | Rung classifier + state machine + event log (Appendix B) | Not started | — | `src/common/rung`, `eventlog` reserved |
 | S4 | Activation + Book Health | Not started | — | |
 | S5 | Offer Engine | Not started | — | `mca_funders` = reuse dataset |
