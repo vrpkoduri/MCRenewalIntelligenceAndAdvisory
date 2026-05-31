@@ -1,0 +1,74 @@
+# Lakeflow Connect ingestion — Salesforce → mca_mri.bronze (Sprint 0)
+#
+# Code representation of the pipeline + schedule job that were first created via the
+# Databricks UI wizard on 2026-05-31 and have already run successfully (see SPRINT_TRACKER
+# "bronze ingestion live"). This file makes that resource reproducible/deployable via the
+# DAB instead of living only in the UI.
+#
+# Live objects this mirrors:
+#   pipeline  mri_sf_ingest_bronze      id 0b6d521b-55be-4a85-b463-2c7a7f21080d
+#   job       "mri_sf_ingest_bronze job" id 872972059788644 (periodic, every 6h)
+#
+# ── DEPLOY GATE (GENERAL_INSTRUCTIONS Rule 5) ───────────────────────────────────────────
+# `databricks bundle validate` is safe and should pass anytime. Do NOT `bundle deploy`
+# without explicit approval. Also note: a plain deploy would create a SECOND, separate
+# pipeline (new id) rather than adopt the existing one. To make the bundle MANAGE the
+# already-running resource instead of duplicating it, bind once before the first deploy:
+#
+#   databricks bundle deployment bind mri_sf_ingest_bronze 0b6d521b-55be-4a85-b463-2c7a7f21080d -t dev
+#   databricks bundle deployment bind mri_sf_ingest_bronze_job 872972059788644 -t dev
+#
+# After binding, `bundle deploy -t dev` reconciles the live resource to this definition.
+# ────────────────────────────────────────────────────────────────────────────────────────
+
+resources:
+  pipelines:
+    mri_sf_ingest_bronze:
+      name: mri_sf_ingest_bronze
+      catalog: ${var.catalog}
+      schema: ${var.bronze_schema}
+      channel: CURRENT
+      # Managed serverless ingestion pipeline; managed streaming tables in bronze (C-010).
+      ingestion_definition:
+        connection_name: mri_salesforce   # UC connection (OAUTH_U2M) — holds the SF creds
+        source_type: SALESFORCE
+        objects:
+          # The four Sprint 0 objects (C-011). source_schema is Salesforce's "objects".
+          - table:
+              source_schema: objects
+              source_table: Account                   # parent merchant
+              destination_catalog: ${var.catalog}
+              destination_schema: ${var.bronze_schema}
+          - table:
+              source_schema: objects
+              source_table: Opportunity                # one row per advance
+              destination_catalog: ${var.catalog}
+              destination_schema: ${var.bronze_schema}
+          - table:
+              source_schema: objects
+              source_table: OpportunityFieldHistory     # stage-transition event source
+              destination_catalog: ${var.catalog}
+              destination_schema: ${var.bronze_schema}
+          - table:
+              source_schema: objects
+              source_table: Offer__c                    # offers list + selected offer (Select_Offer__c=true)
+              destination_catalog: ${var.catalog}
+              destination_schema: ${var.bronze_schema}
+
+  jobs:
+    mri_sf_ingest_bronze_job:
+      name: mri_sf_ingest_bronze job
+      max_concurrent_runs: 1
+      # Refresh the ingestion pipeline every 6 hours (CDC handles incremental).
+      trigger:
+        pause_status: UNPAUSED
+        periodic:
+          interval: 6
+          unit: HOURS
+      email_notifications:
+        on_failure:
+          - ${var.notifications_email}
+      tasks:
+        - task_key: mri_sf_ingest_bronze_job
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.mri_sf_ingest_bronze.id}

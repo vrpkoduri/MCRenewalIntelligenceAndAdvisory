@@ -1,0 +1,44 @@
+# Databricks Asset Bundle — Morgan Cash MRI (Merchant Retention & Advisory Intelligence)
+# Targets: dev (default) and prod. Catalog and schema names come from variables so the
+# whole bundle points at one place (GENERAL_INSTRUCTIONS Rule 3 — centralization).
+bundle:
+  name: mca_mri
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for MRI medallion layers.
+    default: mca_mri
+  bronze_schema:
+    description: Raw landing schema (Lakeflow Connect CDC output).
+    default: bronze
+  silver_schema:
+    description: Cleaned/typed schema.
+    default: silver
+  test_suffix:
+    description: Suffix for isolated integration-test schemas (house convention, e.g. silver_test).
+    default: _test
+  notifications_email:
+    description: Email for job failure notifications.
+    default: venkat@morgancash.com
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-1070256156274807.7.azuredatabricks.net
+    variables:
+      catalog: mca_mri
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-1070256156274807.7.azuredatabricks.net
+      # prod deploys are gated on explicit approval (GENERAL_INSTRUCTIONS Rule 5)
+    variables:
+      catalog: mca_mri
+    run_as:
+      user_name: venkat@morgancash.com

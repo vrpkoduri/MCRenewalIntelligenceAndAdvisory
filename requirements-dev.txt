@@ -1,0 +1,9 @@
+# Local development & tier-1 (pure-Python) testing.
+# PySpark transforms run on Databricks (tier-2); no local Spark/Java required for tier-1.
+pytest>=8.0
+pandas>=2.0
+openpyxl>=3.1          # read the Data Contract xlsx for schema-consistency tests
+ruff>=0.6             # lint (best-practice gate)
+# Optional local Spark testing (requires a JDK): uncomment to enable tier-2 locally.
+# pyspark==3.5.*
+# chispa>=0.10
