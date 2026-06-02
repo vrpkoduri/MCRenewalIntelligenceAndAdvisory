@@ -24,6 +24,29 @@ databricks bundle validate -t dev      # validate config (safe, read-only)
 
 Workspace: `https://adb-1070256156274807.7.azuredatabricks.net` (profile DEFAULT, user venkat@morgancash.com).
 
+## Tier-2 reconciliation on Databricks (one-time serverless job)
+
+The tier-2 recons run ON Databricks (need Spark). Pattern: stage `src/` + the recon module as Workspace **files** and the driver as a **notebook**, submit a serverless job, parse `notebook_output.result`, then delete the staging dir.
+
+```bash
+STAGE=/Workspace/Users/venkat@morgancash.com/mri_tier2
+databricks workspace mkdirs "$STAGE"
+databricks workspace import-dir src "$STAGE/src" --overwrite
+databricks workspace import "$STAGE/recon_clock.py" --file tests/tier2/recon_clock.py --format AUTO --overwrite
+databricks workspace import "$STAGE/run_tier2_clock" --file tests/tier2/run_tier2_clock.py --language PYTHON --format SOURCE --overwrite
+# Submit against gold_test (Rule 5 — never prod without approval):
+databricks jobs submit --no-wait --json '{"run_name":"mri_tier2_clock","tasks":[{"task_key":"t","notebook_task":{"notebook_path":"'"$STAGE"'/run_tier2_clock","base_parameters":{"schema":"gold_test","allow_prod":"false","run_date":"2026-05-31"}}}]}'
+# ... poll get-run; read get-run-output -> notebook_output.result; expect "failures": []
+databricks workspace delete "$STAGE" --recursive   # clean up staging
+```
+
+## Daily clock recompute (S2, Appendix A — THE core principle)
+
+`transform/gold_clock.build_gold_clock(spark, schema, run_date, allow_prod)` recomputes `gold.deal_clock` + `gold.merchant_clock` for one `run_date` (defaults to today) from `gold.deals` static terms + silver notes, append-only and idempotent per run (`replaceWhere` on `clock_run_date`), refreshing the `*_current` views. **It NEVER reads SF stored balance/paydown/eligible-date** (those are `silver` `_sf_stored_*` checkpoint columns only).
+
+- **Verify on `gold_test` first** (default; `allow_prod=False`). **PROD `gold` write requires `schema=gold` AND `allow_prod=True`** — gated on explicit approval (Rule 5).
+- The production cadence is a **daily DAB job** (defined as code; scheduling/activation is itself approval-gated — not auto-enabled).
+
 ## Unity Catalog quick reference
 
 ```bash

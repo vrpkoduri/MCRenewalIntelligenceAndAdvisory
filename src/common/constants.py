@@ -73,6 +73,19 @@ class BalanceSource:
 
     ACTUAL = "actual"
     ESTIMATED = "estimated"
+    ALL = frozenset({ACTUAL, ESTIMATED})
+
+
+class ClosureStatus:
+    """Appendix A.5b — open-vs-closed is a COMPUTED clock output (SF has no closure
+    status). Three states; a defaulted deal computes to ~100% on schedule, so
+    paydown >= 100% ALONE is never `closed_clean` — the Notes default-cause separates
+    clean from default (the Starr case). Feeds the S3 lifecycle gate (Appendix B)."""
+
+    ACTIVE = "active"  # computed paydown < 100% (or a default note absent and not yet paid off)
+    CLOSED_CLEAN = "closed_clean"  # paydown >= 100% reached, no default note
+    CLOSED_DEFAULT = "closed_default"  # a default is indicated in Notes (dominates paydown)
+    ALL = frozenset({ACTIVE, CLOSED_CLEAN, CLOSED_DEFAULT})
 
 
 class Verdict:
@@ -107,6 +120,31 @@ RTR_TOLERANCE = 1.0
 # flagging normal create->fund latency. Diagnostic only; never drops rows. Calibratable.
 DATE_SANITY_GAP_DAYS = 365
 
+# --- Amortization Clock (Appendix A, S2 / C-016) ---------------------------------
+# Holiday set excluded from the daily business-day elapsed count (A.3). D-204 v1 =
+# plain M–F (no holidays) -> empty. Threaded through clock.calendar as a parameter so
+# the US-Federal-holiday upgrade is a single edit here. ISO date strings "YYYY-MM-DD".
+DEFAULT_HOLIDAYS: frozenset[str] = frozenset()
+
+# Free-text default-cause signals on a deal's Notes (A.5b). A match marks the deal
+# closed_default — it dominates a ~100% computed paydown so a defaulted deal is NEVER
+# mislabeled closed_clean (the Starr case). Lower-cased substring match. Sub-typing
+# (true-default vs early-payoff/clawback vs restructured, Appendix B.2) is the S7 Data
+# Steward agent's job; S2 only sets the binary default-note signal deterministically.
+DEFAULT_NOTE_KEYWORDS: tuple[str, ...] = (
+    "default",  # covers "default" / "defaulted"
+    "clawback",
+    "charge-off",
+    "chargeoff",
+    "charged off",
+    "write-off",
+    "writeoff",
+    "written off",
+    "uncollect",  # uncollectable / uncollectible
+    "nsf",
+    "bankrupt",  # bankrupt / bankruptcy
+)
+
 
 class GoldTable:
     """S1 gold layer — conformed single source of truth for S2+ (D-104)."""
@@ -116,6 +154,13 @@ class GoldTable:
     # Persisted crosswalk (D-101): merchant_sf_id -> merchant_id, upserted each
     # refresh so ids never re-key on re-merge (stable downstream join key).
     MERCHANT_CROSSWALK = "merchant_crosswalk"
+    # S2 Amortization Clock (Appendix A) — separate POINT-IN-TIME tables (D-201/C-016),
+    # partitioned by clock_run_date, append-only across days, idempotent within a day.
+    # `*_current` are views over the latest clock_run_date for live reads.
+    DEAL_CLOCK = "deal_clock"
+    MERCHANT_CLOCK = "merchant_clock"
+    DEAL_CLOCK_CURRENT = "deal_clock_current"
+    MERCHANT_CLOCK_CURRENT = "merchant_clock_current"
 
 
 class Identity:
@@ -174,8 +219,11 @@ class Thresholds:
     Sources noted inline.
     """
 
-    DEFAULT_RENEWAL_PAYDOWN = 0.55  # Appendix A.4 — default when no funder-specific value
+    DEFAULT_RENEWAL_PAYDOWN = 0.55  # Appendix A.4 / D-205 — default renewal threshold when
+    # no funder-specific value (the per-funder mca_funders lookup is FU-201). This is the
+    # single 0.55 source of truth — the clock reads it; no duplicate constant (Rule 3).
     BUSINESS_DAYS_PER_MONTH = 21.7  # Appendix A.3 — daily-frequency elapsed-payment count
+    BUSINESS_DAYS_PER_WEEK = 5  # Appendix A.3/A.5 — weekly-normalized debit for daily deals
     WEEKS_PER_MONTH = 4.33  # Appendix A.3 — weekly-frequency term-months divisor (USED in S1)
     BURDEN_DISTRESS_CEILING = 0.30  # Appendix B.3 / Framework 4.2 (~25-30%)
     BURDEN_SERIAL_BAND = (0.15, 0.30)  # Framework 4.3

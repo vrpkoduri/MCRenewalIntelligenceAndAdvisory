@@ -10,9 +10,13 @@ Three gold tables (D-104):
 """
 
 from ..field_maps import (
+    DEAL_CLOCK_MAP,
     DEAL_TABLE_MAP,
+    GOLD_DEAL_CLOCK_DQ_COLUMNS,
     GOLD_DEALS_DQ_COLUMNS,
+    GOLD_MERCHANT_CLOCK_DQ_COLUMNS,
     GOLD_MERCHANTS_DQ_COLUMNS,
+    MERCHANT_CLOCK_MAP,
     MERCHANT_CROSSWALK_MAP,
     MERCHANT_MAP,
 )
@@ -65,3 +69,25 @@ def merchant_crosswalk_schema():
     return StructType(
         [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in MERCHANT_CROSSWALK_MAP]
     )
+
+
+def deal_clock_schema():
+    """StructType for mca_mri.gold.deal_clock (S2 Appendix A per-deal clock, point-in-time)."""
+    from pyspark.sql.types import StructField, StructType
+
+    fields = [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in DEAL_CLOCK_MAP]
+    fields += [
+        StructField(name, _spark_type(dt), True) for name, dt in GOLD_DEAL_CLOCK_DQ_COLUMNS
+    ]
+    return StructType(fields)
+
+
+def merchant_clock_schema():
+    """StructType for mca_mri.gold.merchant_clock (S2 Appendix A merchant roll-up, point-in-time)."""
+    from pyspark.sql.types import StructField, StructType
+
+    fields = [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in MERCHANT_CLOCK_MAP]
+    fields += [
+        StructField(name, _spark_type(dt), True) for name, dt in GOLD_MERCHANT_CLOCK_DQ_COLUMNS
+    ]
+    return StructType(fields)

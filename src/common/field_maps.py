@@ -203,6 +203,68 @@ GOLD_MERCHANTS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
     ("tax_id_is_missing", "bool"),
 )
 
+# =============================================================================
+# GOLD layer (S2) — Amortization Clock outputs (Appendix A). POINT-IN-TIME tables
+# (D-201/C-016), keyed (id, clock_run_date). Source-label convention here:
+#   "clock:<A.x>"        computed by the Appendix A clock — recomputed daily, NOT SF stored
+#   "run:today"          the run's "today" (clock_run_date), stamped for reproducibility
+#   "gold.deals.<col>"   static term carried from the canonical Deal Table (single source)
+#   "derive:<desc>"      a roll-up / inference computed in the transform
+# The per-deal clock fields are MRI-internal (not in the contract Deal Table — that sheet
+# is the 24 STATIC fields). The per-merchant fields ARE the contract "Merchant Gold Table"
+# → "Position & burden (the clock)" section (+ time-dependent Identity fields).
+# =============================================================================
+
+# gold.deals (static terms) + Appendix A clock -> mca_mri.gold.deal_clock (point-in-time).
+DEAL_CLOCK_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("deal_id", "string", "gold.deals.deal_id", Verdict.HAVE, "PK part (with clock_run_date)"),
+    FieldSpec("merchant_id", "string", "gold.deals.merchant_id", Verdict.HAVE, "roll-up key"),
+    FieldSpec("clock_run_date", "date", "run:today", Verdict.DERIVE, "the run's 'today'; PK part; point-in-time stamp (A.0)"),
+    FieldSpec("rtr", "decimal", "clock:A.2 funded_amount × factor_rate", Verdict.DERIVE, "total owed; never changes; validated vs total_payback"),
+    FieldSpec("elapsed_payments", "int", "clock:A.3 business-day/weekly count", Verdict.DERIVE, "capped at num_payments (never past payoff)"),
+    FieldSpec("amount_paid", "decimal", "clock:A.2 payment_amount × elapsed_payments", Verdict.DERIVE),
+    FieldSpec("est_current_balance", "decimal", "clock:A.2 max(0, rtr − amount_paid)", Verdict.DERIVE, "NOT SF stored Remaining Balance"),
+    FieldSpec("est_paydown_pct", "decimal", "clock:A.2 amount_paid ÷ rtr", Verdict.DERIVE, "capped [0,1]; NOT SF stored Percentage Paid"),
+    FieldSpec("est_renewal_eligible_date", "date", "clock:A.4 inverse-solve to threshold", Verdict.DERIVE, "NOT SF stored Estimated Renewal Date"),
+    FieldSpec("is_eligible_now", "bool", "clock:A.4 paydown ≥ threshold", Verdict.DERIVE),
+    FieldSpec("renewal_threshold", "decimal", "clock:A.4 funder lookup (default 0.55)", Verdict.DERIVE, "D-205: per-funder lookup FU-201; default DEFAULT_RENEWAL_PAYDOWN"),
+    FieldSpec("closure_status", "enum", "clock:A.5b three-state", Verdict.DERIVE, "active / closed_clean / closed_default; default note dominates ~100% paydown"),
+    FieldSpec("has_default_note", "bool", "clock:A.5b Notes default-cause", Verdict.DERIVE, "binary signal; sub-typing is S7"),
+    FieldSpec("balance_source", "enum", "clock:A.3/A.6 confidence flag", Verdict.DERIVE, "actual / estimated; all estimated in v1 (D-203 no feed)"),
+)
+
+# gold.merchants + Deal-Clock roll-up -> mca_mri.gold.merchant_clock (point-in-time).
+# These field NAMES are the contract Merchant Gold "Position & burden (the clock)" section
+# (+ time-dependent first_funded_date / tenure_days from the Identity section).
+MERCHANT_CLOCK_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "gold.merchants.merchant_id", Verdict.HAVE, "PK part (with clock_run_date)"),
+    FieldSpec("clock_run_date", "date", "run:today", Verdict.DERIVE, "point-in-time stamp; PK part"),
+    FieldSpec("first_funded_date", "date", "derive:MIN(deal.funded_date)", Verdict.DERIVE, "contract Identity; static but seeded here (drives tenure)"),
+    FieldSpec("tenure_days", "int", "derive:today − first_funded_date", Verdict.DERIVE, "contract Identity; time-dependent → recomputed here, not S1"),
+    FieldSpec("active_position_cnt", "int", "derive:count closure_status=active", Verdict.DERIVE, "Position&burden; itself an inference (A.5b)"),
+    FieldSpec("total_weekly_debit", "decimal", "derive:Σ active weekly-normalized payments", Verdict.DERIVE, "Position&burden"),
+    FieldSpec("est_weekly_revenue", "decimal", "gap", Verdict.MUST_CAPTURE, "Position&burden; bank feed (none v1) → null + flag, never 0"),
+    FieldSpec("burden_ratio", "decimal", "derive:total_weekly_debit ÷ est_weekly_revenue", Verdict.DERIVE, "Position&burden; null + flag where revenue missing"),
+    FieldSpec("est_current_balance", "decimal", "derive:Σ active est_current_balance", Verdict.DERIVE, "Position&burden; NOT SF stored"),
+    FieldSpec("est_paydown_pct", "decimal", "derive:primary active position paydown", Verdict.DERIVE, "Position&burden; primary drives eligibility (A.5)"),
+    FieldSpec("est_renewal_eligible_date", "date", "derive:primary active position eligible_date", Verdict.DERIVE, "Position&burden"),
+    FieldSpec("is_eligible_now", "bool", "derive:primary paydown ≥ threshold", Verdict.DERIVE, "convenience (not a contract column)"),
+    FieldSpec("balance_source", "enum", "derive:weakest across positions", Verdict.DERIVE, "Position&burden; any estimated → estimated (A.5)"),
+)
+
+GOLD_DEAL_CLOCK_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    # Static terms absent so the clock could not compute (math fields null, never faked).
+    ("clock_inputs_missing", "bool"),
+    # Day-one checkpoint (A.0): |rtr − total_payback|. Both are legit terms (NOT the SF
+    # stored balance); a large delta flags a terms contradiction, never overwrites.
+    ("rtr_checkpoint_delta", "decimal"),
+)
+
+GOLD_MERCHANT_CLOCK_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("est_weekly_revenue_is_missing", "bool"),
+    ("burden_ratio_is_missing", "bool"),
+)
+
 
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
@@ -214,6 +276,16 @@ def merchant_columns() -> list[str]:
 
 def merchant_crosswalk_columns() -> list[str]:
     return [fs.silver_col for fs in MERCHANT_CROSSWALK_MAP]
+
+
+def deal_clock_columns() -> list[str]:
+    return [fs.silver_col for fs in DEAL_CLOCK_MAP] + [c for c, _ in GOLD_DEAL_CLOCK_DQ_COLUMNS]
+
+
+def merchant_clock_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_CLOCK_MAP] + [
+        c for c, _ in GOLD_MERCHANT_CLOCK_DQ_COLUMNS
+    ]
 
 
 # DQ-derived columns added by the silver transform (not direct source maps).
