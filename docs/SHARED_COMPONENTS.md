@@ -6,7 +6,7 @@ Reusable libraries with stable contracts, centralized so they change in one plac
 
 | Component | Path | Contract / purpose |
 |---|---|---|
-| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, Verdict), no-surface set, RTR tolerance, reserved Appendix A/B thresholds. Pure Python. |
+| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
 | `field_maps` | `src/common/field_maps.py` | SPRINT_0 bronze→silver maps as `FieldSpec` data (deals, field_history) + DQ-derived columns. The rename/typing spec the transform reads. |
 | `contract` | `src/common/contract.py` | Loads the authoritative Data Contract xlsx; exposes Deal/Merchant-Gold field→verdict maps for drift tests. |
 | `dq.predicates` | `src/common/dq/predicates.py` | Pure-Python DQ semantics: missing-implausible-zero, date-sanity, RTR check. Tier-1 testable; the canonical spec. |
@@ -34,9 +34,9 @@ Reusable libraries with stable contracts, centralized so they change in one plac
 
 All clock functions are pure / Spark-free-at-import (tier-1 testable) and reused inside the Spark columns/UDFs of `transform/gold_clock.py` — the same `dq.predicates ↔ dq.rules` mirror pattern.
 
-## Planned (Sprint 3 — designed + decisions signed C-017; build pending)
+## Built (Sprint 3 — rung classifier + event log, Appendix B)
 
-Appendix B engine, decisions signed 2026-06-01 ([SPRINT_3_PLAN](sprints/SPRINT_3_PLAN.md), DECISIONS C-017). Reserved homes `src/common/rung/` + `src/common/eventlog/` exist (empty `__init__.py`). Pure / Spark-free-at-import, mirroring `common/clock`.
+Appendix B engine, decisions signed 2026-06-01 ([SPRINT_3_PLAN](sprints/SPRINT_3_PLAN.md), DECISIONS C-017); **pure modules built + tier-1 green 2026-06-02 (217 tier-1; cloud `transform/gold_rung.py` gated, Rule 5).** Pure / Spark-free-at-import, mirroring `common/clock`.
 
 | Component | Path | Contract / purpose |
 |---|---|---|
@@ -46,7 +46,7 @@ Appendix B engine, decisions signed 2026-06-01 ([SPRINT_3_PLAN](sprints/SPRINT_3
 | `rung.classify` | `src/common/rung/classify.py` | Composes gate→waterfall→output object `{lifecycle_state, rung, confidence, missing_signals[], direction_of_travel}`. Single pure entry point. |
 | `eventlog.events` | `src/common/eventlog/events.py` | D-305 append-only event builders + schema; v1 = classification + transition events, one wide table keyed `(merchant_id, event_type, event_ts)`. |
 
-Reuses the existing `Thresholds` (no duplicate numbers — Rule 3) + `Type=Renewal` trust (D-303). Consumed by `transform/gold_rung.py` (the Spark driver, build pending) writing point-in-time `gold.merchant_rung` (+`_current` view) + append-only `gold.merchant_event_log` (D-304).
+Reuses the existing `Thresholds` (no duplicate numbers — Rule 3) + `Type=Renewal` trust (D-303). Consumed by **`transform/gold_rung.py`** (the Spark driver — **built; tier-2 PASSED + promoted to PROD `gold` 2026-06-02, `failures: []`**) which applies the pure engine via UDFs and writes point-in-time `gold.merchant_rung` (+`_current` view) + append-only `gold.merchant_event_log` (D-304/D-305).
 
 ## Principles
 

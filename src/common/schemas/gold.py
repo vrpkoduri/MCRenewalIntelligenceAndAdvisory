@@ -9,16 +9,19 @@ Three gold tables (D-104):
   mca_mri.gold.merchant_crosswalk-- persisted SF-Account -> merchant_id crosswalk (D-101)
 """
 
+from ..eventlog.events import EVENT_LOG_COLUMNS
 from ..field_maps import (
     DEAL_CLOCK_MAP,
     DEAL_TABLE_MAP,
     GOLD_DEAL_CLOCK_DQ_COLUMNS,
     GOLD_DEALS_DQ_COLUMNS,
     GOLD_MERCHANT_CLOCK_DQ_COLUMNS,
+    GOLD_MERCHANT_RUNG_DQ_COLUMNS,
     GOLD_MERCHANTS_DQ_COLUMNS,
     MERCHANT_CLOCK_MAP,
     MERCHANT_CROSSWALK_MAP,
     MERCHANT_MAP,
+    MERCHANT_RUNG_MAP,
 )
 
 # Logical dtype -> Spark type name. Identical contract to schemas/silver.py so the
@@ -91,3 +94,27 @@ def merchant_clock_schema():
         StructField(name, _spark_type(dt), True) for name, dt in GOLD_MERCHANT_CLOCK_DQ_COLUMNS
     ]
     return StructType(fields)
+
+
+def merchant_rung_schema():
+    """StructType for mca_mri.gold.merchant_rung (S3 Appendix B classifier, point-in-time, D-304)."""
+    from pyspark.sql.types import StructField, StructType
+
+    fields = [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in MERCHANT_RUNG_MAP]
+    fields += [
+        StructField(name, _spark_type(dt), True) for name, dt in GOLD_MERCHANT_RUNG_DQ_COLUMNS
+    ]
+    return StructType(fields)
+
+
+def event_log_schema():
+    """StructType for mca_mri.gold.merchant_event_log (S3 append-only event log, D-305).
+
+    Built from the single column source in common.eventlog.events (EVENT_LOG_COLUMNS) so
+    the schema and the pure builders can never drift.
+    """
+    from pyspark.sql.types import StructField, StructType
+
+    return StructType(
+        [StructField(name, _spark_type(dt), True) for name, dt in EVENT_LOG_COLUMNS]
+    )

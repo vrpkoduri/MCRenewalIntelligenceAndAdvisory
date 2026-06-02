@@ -265,6 +265,46 @@ GOLD_MERCHANT_CLOCK_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
     ("burden_ratio_is_missing", "bool"),
 )
 
+# =============================================================================
+# GOLD layer (S3) — Rung Classifier outputs (Appendix B). POINT-IN-TIME table
+# (D-304), keyed (merchant_id, classify_run_date), append-only + `_current` view —
+# mirrors the S2 clock pattern. Source-label convention here:
+#   "rung:<B.x>"               computed by the Appendix B classifier (NOT Salesforce)
+#   "run:today"                the run's "today" (classify_run_date), point-in-time stamp
+#   "clock:merchant_clock_current.<col>"  read from the S2 merchant clock (spine; never recomputed)
+#   "gold.deals.<col>"         a roll-up over the merchant's canonical Deal Table rows
+# These are MRI-internal classification fields (not the contract's 24 STATIC Deal fields):
+# the Data Contract Merchant Gold Table "rung / lifecycle" section. NO SF stored balances
+# are read — the classifier consumes only S2 clock outputs (CLAUDE.md 2.1).
+# =============================================================================
+
+# gold.merchant_clock_current + gold deals/merchants -> mca_mri.gold.merchant_rung (point-in-time).
+MERCHANT_RUNG_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "clock:merchant_clock_current.merchant_id", Verdict.HAVE, "PK part (with classify_run_date)"),
+    FieldSpec("classify_run_date", "date", "run:today", Verdict.DERIVE, "the run's 'today'; PK part; point-in-time stamp (mirrors clock_run_date)"),
+    FieldSpec("lifecycle_state", "enum", "rung:B.2 lifecycle gate", Verdict.DERIVE, "defaulted / dormant / new-establishing / active"),
+    FieldSpec("rung", "int", "rung:B.3 waterfall (first-match + stress override)", Verdict.DERIVE, "1..5 (Distressed..Graduate); null when gated or Unclassified"),
+    FieldSpec("confidence", "decimal", "rung:D-306 borderline margin", Verdict.DERIVE, "[0.5,1.0] deterministic rules score, NOT an ML probability; missing data never lowers it"),
+    FieldSpec("direction_of_travel", "enum", "rung:4.7 prev->curr health rank", Verdict.DERIVE, "climbing / holding / sliding; prioritizes the daily queue"),
+    FieldSpec("default_subtype", "enum", "rung:B.2 default sub-type", Verdict.CARRY, "v1 always 'unknown' for defaulted (S7 refines, FU-301); null when not defaulted"),
+    FieldSpec("route", "enum", "rung:B.2/B.5 advisory route", Verdict.DERIVE, "do-not-fund / win-back / clock-running / waterfall / review / ..."),
+    FieldSpec("rapid_reup_flag", "bool", "rung:D-302 (owned in common/rung)", Verdict.DERIVE, "prior position <50% paid down & still active at new funding, OR <=45-day gap fallback"),
+    FieldSpec("renewal_chain_incomplete", "bool", "gold.deals.renewal_unlinkable roll-up", Verdict.CARRY, "D-303 data-linkage gap (FU-302); flagged, NEVER a disqualifier"),
+    FieldSpec("missing_signals", "string", "rung:4.7 data-capture roadmap", Verdict.DERIVE, "comma-joined absent signals; absence never lowers confidence (D-306)"),
+)
+
+# Rung DQ / classification-bucket columns (beyond the field set). (col, dtype).
+GOLD_MERCHANT_RUNG_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("is_gated", "bool"),  # lifecycle routed off the waterfall (defaulted/dormant/new) -> rung null
+    ("is_unclassified", "bool"),  # active but no rung matched -> the explicit Unclassified pile
+)
+
+
+def merchant_rung_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_RUNG_MAP] + [
+        c for c, _ in GOLD_MERCHANT_RUNG_DQ_COLUMNS
+    ]
+
 
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]

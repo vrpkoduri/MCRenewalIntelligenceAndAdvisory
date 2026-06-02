@@ -42,7 +42,18 @@ python3 -m pytest -q -m spark        # requires pyspark+JDK locally, or run as a
 
 ## Per-sprint test register
 
-### Sprint 0 (current)
-Added: `test_constants`, `test_field_maps`, `test_contract_consistency`, `test_dq_predicates`, `test_no_surface_guard`, `test_validation_merchants`.
-**Result (2026-05-29): 32 passed, 0 failed (tier-1).**
-Pending (tier-2, after bronze lands): silver transform unit/integration on synthetic bronze, reconciliation, table-level no-surface, schema/type assertions.
+### Sprint 0
+Added: `test_constants`, `test_field_maps`, `test_contract_consistency`, `test_dq_predicates`, `test_no_surface_guard`, `test_validation_merchants` (+ `test_offers_field_history_maps`).
+**Result (2026-05-29): 32 → later 41 passed (tier-1).** Tier-2: silver recon PASSED on `silver_test` then promoted to prod (`recon_silver_deals`, `recon_aux`).
+
+### Sprint 1 (identity + gold)
+Added: `test_identity_normalize` (37, ported AATM cases), `test_identity_match`, `test_identity_keys`, `test_gold_maps`. **106 tier-1 green.** Tier-2 `recon_gold` PASSED on `gold_test` → prod.
+
+### Sprint 2 (amortization clock, Appendix A)
+Added: `test_clock` (+59) — A.2 arithmetic, A.3/A.4 calendar + inverse-solve, A.5b closure (Starr default-note invariant), A.5 roll-up, four merchants vs `expected_clock`, no-surface. **165 tier-1 green.** Tier-2 `recon_clock` PASSED on `gold_test` → prod.
+
+### Sprint 3 (rung classifier + event log, Appendix B)
+Added: `test_rung` (42), `test_eventlog` (10). Covers the Step-0 gate routes + order + dormancy boundary; waterfall first-match-wins + **stress-override-pulls-down**; Disciplined AND-conditions; D-303 unlinkable-renewal not a disqualifier; Growth/Graduate gating; `rapid_reup_flag` paydown-primary/day-gap-fallback/worsening-terms (D-302); borderline confidence + missing-data-never-lowers + Unclassified-floor (D-306); `direction_of_travel`; the **four B.5 merchants** end-to-end; output-object shape; rung-map column/verdict/no-surface invariants; event-log append-only/no-mutation/transition-only-on-change/keying (D-305).
+**Result (2026-06-02): 52 new → 217 passed, 0 failed (tier-1).**
+**Tier-2 (`recon_rung` + `run_tier2_rung`) PASSED on `gold_test` (2026-06-02, `failures: []`):** built `gold_test.merchant_rung` (+`_current`) + `merchant_event_log` via `build_gold_rung` (serverless one-time job, staging cleaned up). Green: whole-book coverage **2,125/2,125** (key unique), schema contracts, enum/bounds/route domains, gated-null-rung + `is_gated` consistency, **Unclassified bucket** `is_unclassified ⇔ (active ∧ rung null)`, no-surface on both tables, one classification event/merchant + unique `(merchant_id,event_type,event_ts)`, `_current` = latest run, **two-run state machine** (prior partition unchanged/append-only, `_current` advanced). **Unclassified pile quantified:** 141 (top missing `disclosed_positions_cnt`/`est_weekly_revenue`/`burden_ratio`/`est_paydown_pct`). Diagnostics: dormant 1,458 / active 422 / new-establishing 239 / defaulted 6; Serial 169 / Distressed 65 / Disciplined 47; rapid_reup 287; renewal_chain_incomplete 503; Wolf→Serial (B.5).
+**PROD `gold` promotion PASSED 2026-06-02** (`schema=gold, allow_prod=True, second_run=False` — clean single partition; recon identical, `failures: []`): `mca_mri.gold.merchant_rung` (2,125) + `merchant_rung_current` (view) + `merchant_event_log` (2,125 events).

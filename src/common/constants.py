@@ -88,6 +88,97 @@ class ClosureStatus:
     ALL = frozenset({ACTIVE, CLOSED_CLEAN, CLOSED_DEFAULT})
 
 
+# --- Rung Classifier (Appendix B, S3 / C-017) ------------------------------------
+# The two axes (B.1): every merchant carries a LifecycleState (where they are in the
+# funding cycle); active merchants additionally carry a RungState (health rung 1-5).
+# Pure-Python enums (no Spark) so common/rung is tier-1 testable.
+
+
+class LifecycleState:
+    """Step-0 lifecycle gate routes (Appendix B.2). String values match the
+    `expected.lifecycle_state` in the four-merchant fixtures."""
+
+    DEFAULTED = "defaulted"  # a position computed closed_default (Starr) -> sub-type + route
+    DORMANT = "dormant"  # idle > 2x median renewal gap, no active positions (OBP) -> win-back
+    NEW_ESTABLISHING = "new-establishing"  # single recent position, no renewal history (Snell)
+    ACTIVE = "active"  # >=1 open position -> proceed to the rung waterfall (Wolf)
+    ALL = frozenset({DEFAULTED, DORMANT, NEW_ESTABLISHING, ACTIVE})
+
+
+class RungState:
+    """Health rung 1-5 (Appendix B.3 / Framework 4.2-4.6). 1 = worst (Distressed),
+    5 = best (Graduate). `rung` is an int 1..5, or None for gated/Unclassified."""
+
+    DISTRESSED = 1
+    SERIAL = 2
+    DISCIPLINED = 3
+    GROWTH = 4
+    GRADUATE = 5
+    ALL = frozenset({DISTRESSED, SERIAL, DISCIPLINED, GROWTH, GRADUATE})
+    NAMES = {
+        DISTRESSED: "distressed",
+        SERIAL: "serial",
+        DISCIPLINED: "disciplined",
+        GROWTH: "growth",
+        GRADUATE: "graduate",
+    }
+
+
+class DefaultSubtype:
+    """Defaulted sub-typing + routing (Appendix B.2). v1 cannot reliably sub-type
+    (gated on the data audit / S7 Data Steward), so an undetermined default is
+    treated `unknown` -> do-not-fund — the conservative interim (misrouting a true
+    default to win-back is the costlier error). Starr -> unknown."""
+
+    TRUE_DEFAULT = "true_default"  # -> distressed/exit (do-not-fund, restructuring referral)
+    EARLY_PAYOFF = "early_payoff"  # early-payoff / clawback -> win-back (a healthy merchant who left)
+    RESTRUCTURED = "restructured"  # -> impaired-managed
+    UNKNOWN = "unknown"  # undetermined -> do-not-fund + flag for review (v1 default)
+    ALL = frozenset({TRUE_DEFAULT, EARLY_PAYOFF, RESTRUCTURED, UNKNOWN})
+
+
+class LifecycleRoute:
+    """The advisory action a lifecycle/rung outcome routes to (Appendix B.2 / B.5).
+    Carried alongside the rung so S4 activation knows what to do; not an ML output."""
+
+    DO_NOT_FUND = "do-not-fund"  # defaulted, sub-type unknown -> review (Starr)
+    DISTRESSED_EXIT = "distressed-exit"  # confirmed true default -> graceful off-boarding
+    IMPAIRED_MANAGED = "impaired-managed"  # restructured default
+    WIN_BACK = "win-back"  # dormant, or early-payoff/clawback default (OBP)
+    CLOCK_RUNNING = "clock-running"  # new/establishing — healthy, not yet Disciplined (Snell)
+    WATERFALL = "waterfall"  # active -> rung placed by the waterfall (Wolf -> Serial eval)
+    REVIEW = "review"  # Unclassified — key signals missing, needs data capture
+    ALL = frozenset(
+        {DO_NOT_FUND, DISTRESSED_EXIT, IMPAIRED_MANAGED, WIN_BACK, CLOCK_RUNNING, WATERFALL, REVIEW}
+    )
+
+
+class DirectionOfTravel:
+    """Run-over-run trajectory (Framework 4.7) — lets the daily queue prioritize a
+    sliding disciplined merchant over a stable one. Deterministic from prev->curr rank."""
+
+    CLIMBING = "climbing"  # moved to a healthier rung/state
+    HOLDING = "holding"  # unchanged (or no prior run / not comparable)
+    SLIDING = "sliding"  # moved to a less-healthy rung/state — the high-value early alert
+    ALL = frozenset({CLIMBING, HOLDING, SLIDING})
+
+
+class EventType:
+    """Append-only event log (D-305). v1 emits classification + transition events into
+    ONE wide table keyed (merchant_id, event_type, event_ts); S4/S5/S8 append their own
+    event types (touch/comms/offer) to the same log later."""
+
+    CLASSIFICATION = "classification"  # one per merchant per classify_run_date
+    TRANSITION = "transition"  # emitted only when lifecycle_state or rung changed run-over-run
+    ALL = frozenset({CLASSIFICATION, TRANSITION})
+
+
+# rapid_reup_flag (D-302) — owned in common/rung (nothing computes it upstream today).
+# Fallback day-gap threshold used ONLY when the prior position's paydown can't be computed
+# (the paydown-based test is PRIMARY). Calibratable once the book's gap distribution is seen.
+RAPID_REUP_MAX_GAP_DAYS = 45
+
+
 class Verdict:
     """Data Contract availability verdicts."""
 
@@ -161,6 +252,13 @@ class GoldTable:
     MERCHANT_CLOCK = "merchant_clock"
     DEAL_CLOCK_CURRENT = "deal_clock_current"
     MERCHANT_CLOCK_CURRENT = "merchant_clock_current"
+    # S3 Rung Classifier (Appendix B) — separate POINT-IN-TIME rung table (D-304),
+    # keyed (merchant_id, classify_run_date), append-only with a `*_current` view, and
+    # ONE wide append-only event log (D-305) keyed (merchant_id, event_type, event_ts).
+    # Mirrors the S2 clock pattern: daily classify never overwrites a prior run (auditable).
+    MERCHANT_RUNG = "merchant_rung"
+    MERCHANT_RUNG_CURRENT = "merchant_rung_current"
+    MERCHANT_EVENT_LOG = "merchant_event_log"
 
 
 class Identity:
