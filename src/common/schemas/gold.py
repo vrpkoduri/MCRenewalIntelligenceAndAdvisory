@@ -11,13 +11,16 @@ Three gold tables (D-104):
 
 from ..eventlog.events import EVENT_LOG_COLUMNS
 from ..field_maps import (
+    BOOK_HEALTH_MAP,
     DEAL_CLOCK_MAP,
     DEAL_TABLE_MAP,
     GOLD_DEAL_CLOCK_DQ_COLUMNS,
     GOLD_DEALS_DQ_COLUMNS,
+    GOLD_MERCHANT_ACTIVATION_DQ_COLUMNS,
     GOLD_MERCHANT_CLOCK_DQ_COLUMNS,
     GOLD_MERCHANT_RUNG_DQ_COLUMNS,
     GOLD_MERCHANTS_DQ_COLUMNS,
+    MERCHANT_ACTIVATION_MAP,
     MERCHANT_CLOCK_MAP,
     MERCHANT_CROSSWALK_MAP,
     MERCHANT_MAP,
@@ -117,4 +120,24 @@ def event_log_schema():
 
     return StructType(
         [StructField(name, _spark_type(dt), True) for name, dt in EVENT_LOG_COLUMNS]
+    )
+
+
+def merchant_activation_schema():
+    """StructType for mca_mri.gold.merchant_activation (S4 state machine + plays, point-in-time, D-404)."""
+    from pyspark.sql.types import StructField, StructType
+
+    fields = [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in MERCHANT_ACTIVATION_MAP]
+    fields += [
+        StructField(name, _spark_type(dt), True) for name, dt in GOLD_MERCHANT_ACTIVATION_DQ_COLUMNS
+    ]
+    return StructType(fields)
+
+
+def book_health_schema():
+    """StructType for mca_mri.gold.book_health (S4 scoreboard, tall point-in-time, D-404)."""
+    from pyspark.sql.types import StructField, StructType
+
+    return StructType(
+        [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in BOOK_HEALTH_MAP]
     )

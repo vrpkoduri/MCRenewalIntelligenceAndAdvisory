@@ -7,9 +7,12 @@ transition event IS the state machine — no separate mutable state table.
 
 from common.eventlog.events import (
     EVENT_LOG_COLUMNS,
+    build_activation_events,
     build_events,
     classification_event,
     event_log_columns,
+    play_fired_event,
+    state_transition_event,
     transition_event,
 )
 
@@ -19,4 +22,7 @@ __all__ = [
     "classification_event",
     "transition_event",
     "build_events",
+    "state_transition_event",
+    "play_fired_event",
+    "build_activation_events",
 ]

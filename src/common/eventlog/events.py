@@ -40,7 +40,13 @@ EVENT_LOG_COLUMNS: tuple[tuple[str, str], ...] = (
     # transition-only fields (null on classification events)
     ("prev_lifecycle_state", "enum"),
     ("prev_rung", "int"),
-    ("transition_field", "string"),  # which axis changed: 'lifecycle_state' / 'rung' / 'both'
+    ("transition_field", "string"),  # which axis changed: 'lifecycle_state' / 'rung' / 'both' / 'current_state' / 'active_play'
+    # S4 activation fields (null on S3 classification/transition events). For S4 events the
+    # `classify_run_date` column holds the ACTIVATION run date (the run this event belongs to).
+    ("current_state", "enum"),  # S4 state_transition / play_fired — the current operational state
+    ("active_play", "enum"),  # S4 play_fired — the newly-active named play
+    ("prev_current_state", "enum"),  # S4 state_transition — the prior run's current_state
+    ("prev_active_play", "enum"),  # S4 play_fired — the prior run's active_play
 )
 
 
@@ -126,6 +132,69 @@ def transition_event(
         }
     )
     return row
+
+
+# --- S4 activation events (D-305 — same wide table; new event types) -------------
+
+
+def state_transition_event(
+    merchant_id: str, activation_run_date, prev: dict, curr: dict, event_ts
+) -> dict | None:
+    """A `state_transition` event — emitted ONLY when `current_state` changed from the prior
+    activation run. `prev`/`curr` are activation dicts (current_state + active_play). Returns
+    None when unchanged (no row appended). Append-only — a new row, nothing mutated."""
+    prev_state, curr_state = prev.get("current_state"), curr.get("current_state")
+    if prev_state is None or prev_state == curr_state:
+        return None
+    row = _base_row(merchant_id, C.EventType.STATE_TRANSITION, event_ts, activation_run_date)
+    row.update(
+        {
+            "current_state": curr_state,
+            "prev_current_state": prev_state,
+            "active_play": curr.get("active_play"),
+            "transition_field": "current_state",
+        }
+    )
+    return row
+
+
+def play_fired_event(
+    merchant_id: str, activation_run_date, prev: dict, curr: dict, event_ts
+) -> dict | None:
+    """A `play_fired` event — emitted ONLY when `active_play` changed from the prior run.
+    Returns None when unchanged. Append-only."""
+    prev_play, curr_play = prev.get("active_play"), curr.get("active_play")
+    if prev_play is None or prev_play == curr_play:
+        return None
+    row = _base_row(merchant_id, C.EventType.PLAY_FIRED, event_ts, activation_run_date)
+    row.update(
+        {
+            "active_play": curr_play,
+            "prev_active_play": prev_play,
+            "current_state": curr.get("current_state"),
+            "transition_field": "active_play",
+        }
+    )
+    return row
+
+
+def build_activation_events(
+    merchant_id: str, activation_run_date, activation: dict, event_ts, prev: dict | None = None
+) -> list[dict]:
+    """S4 activation events for one merchant for one run: a `state_transition` and/or
+    `play_fired` event when (and only when) the prior run differs. First run (prev None) →
+    no events (the merchant_activation table is the snapshot; the log captures CHANGES).
+    Append-only — these are NEW rows; prior runs are never touched."""
+    if not prev:
+        return []
+    events = []
+    st = state_transition_event(merchant_id, activation_run_date, prev, activation, event_ts)
+    if st is not None:
+        events.append(st)
+    pf = play_fired_event(merchant_id, activation_run_date, prev, activation, event_ts)
+    if pf is not None:
+        events.append(pf)
+    return events
 
 
 def build_events(

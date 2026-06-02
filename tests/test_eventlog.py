@@ -13,9 +13,12 @@ from datetime import date, datetime
 from common import constants as C
 from common.eventlog import (
     EVENT_LOG_COLUMNS,
+    build_activation_events,
     build_events,
     classification_event,
     event_log_columns,
+    play_fired_event,
+    state_transition_event,
     transition_event,
 )
 from common.io.guards import offending_surface_columns
@@ -103,3 +106,41 @@ def test_event_log_columns_are_unique():
 def test_event_types_enumerated():
     ev = classification_event("M1", RUN, _CLS_SERIAL, TS)
     assert ev["event_type"] in C.EventType.ALL
+
+
+# --- S4 activation events ---------------------------------------------------
+
+_ACT_A = {"current_state": "clock-running", "active_play": "serial-renewal-vs-buyout"}
+_ACT_B = {"current_state": "in-market", "active_play": "in-market-renewal"}
+
+
+def test_state_transition_event_only_on_change():
+    ev = state_transition_event("M1", RUN, _ACT_A, _ACT_B, TS)
+    assert ev["event_type"] == C.EventType.STATE_TRANSITION
+    assert ev["prev_current_state"] == "clock-running" and ev["current_state"] == "in-market"
+    assert ev["transition_field"] == "current_state"
+    assert set(ev.keys()) == set(event_log_columns())  # uniform wide shape
+    # unchanged / first run -> no row
+    assert state_transition_event("M1", RUN, _ACT_A, _ACT_A, TS) is None
+    assert state_transition_event("M1", RUN, {"current_state": None}, _ACT_B, TS) is None
+
+
+def test_play_fired_event_only_on_change():
+    ev = play_fired_event("M1", RUN, _ACT_A, _ACT_B, TS)
+    assert ev["event_type"] == C.EventType.PLAY_FIRED
+    assert ev["prev_active_play"] == "serial-renewal-vs-buyout" and ev["active_play"] == "in-market-renewal"
+    assert ev["transition_field"] == "active_play"
+    assert play_fired_event("M1", RUN, _ACT_A, _ACT_A, TS) is None
+
+
+def test_build_activation_events_first_run_empty_then_changes():
+    assert build_activation_events("M1", RUN, _ACT_B, TS, prev=None) == []  # first run: snapshot is the table
+    evs = build_activation_events("M1", RUN, _ACT_B, TS, prev=_ACT_A)
+    types = sorted(e["event_type"] for e in evs)
+    assert types == [C.EventType.PLAY_FIRED, C.EventType.STATE_TRANSITION]
+
+
+def test_activation_events_do_not_mutate_inputs():
+    a, b = dict(_ACT_A), dict(_ACT_B)
+    build_activation_events("M1", RUN, _ACT_B, TS, prev=_ACT_A)
+    assert _ACT_A == a and _ACT_B == b

@@ -6,7 +6,7 @@ Reusable libraries with stable contracts, centralized so they change in one plac
 
 | Component | Path | Contract / purpose |
 |---|---|---|
-| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
+| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType; S4: CurrentState, Play, BookHealthView**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, `APPROACHING_WINDOW_DAYS`/`RENEWED_WINDOW_DAYS`, `PLAY_SLA_BUSINESS_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
 | `field_maps` | `src/common/field_maps.py` | SPRINT_0 bronze→silver maps as `FieldSpec` data (deals, field_history) + DQ-derived columns. The rename/typing spec the transform reads. |
 | `contract` | `src/common/contract.py` | Loads the authoritative Data Contract xlsx; exposes Deal/Merchant-Gold field→verdict maps for drift tests. |
 | `dq.predicates` | `src/common/dq/predicates.py` | Pure-Python DQ semantics: missing-implausible-zero, date-sanity, RTR check. Tier-1 testable; the canonical spec. |
@@ -47,6 +47,20 @@ Appendix B engine, decisions signed 2026-06-01 ([SPRINT_3_PLAN](sprints/SPRINT_3
 | `eventlog.events` | `src/common/eventlog/events.py` | D-305 append-only event builders + schema; v1 = classification + transition events, one wide table keyed `(merchant_id, event_type, event_ts)`. |
 
 Reuses the existing `Thresholds` (no duplicate numbers — Rule 3) + `Type=Renewal` trust (D-303). Consumed by **`transform/gold_rung.py`** (the Spark driver — **built; tier-2 PASSED + promoted to PROD `gold` 2026-06-02, `failures: []`**) which applies the pure engine via UDFs and writes point-in-time `gold.merchant_rung` (+`_current` view) + append-only `gold.merchant_event_log` (D-304/D-305).
+
+## Built (Sprint 4 — activation: state machine + plays + Book Health, §6/5.8)
+
+Decisions signed 2026-06-02 (C-018); **pure modules built + tier-1 green 2026-06-02 (246 tier-1; Spark transforms + serving gated, Rule 5).** Pure / Spark-free-at-import, mirroring `common/rung`. NO Salesforce write in S4 (serving-layer-only, D-403; SF write-back is FU-401). NO merchant comms (S8).
+
+| Component | Path | Contract / purpose |
+|---|---|---|
+| `activation.state_machine` | `src/common/activation/state_machine.py` | D-401 `current_state` (clock-running/approaching/in-market/renewed/lost-winback) from the S2 clock + S3 rung/lifecycle; `state_changed` (state_transition event). |
+| `activation.plays` | `src/common/activation/plays.py` | D-402 `active_play` priority matrix; `play_sla_due` (reuses `clock.calendar.nth_business_day_after`; SLA tiers 2/5/10 business days); `play_owner`; grounded `next_tactical_action`/`next_strategic_nudge` templates. |
+| `activation` (`activate_merchant`) | `src/common/activation/__init__.py` | Composed entry point → `{current_state, active_play, play_sla_due, play_owner, next_tactical_action, next_strategic_nudge}`. |
+| `bookhealth.metrics` | `src/common/bookhealth/metrics.py` | Framework 5.8 metric registry (v1-available vs deferred S5/S6/S8) + None-safe `pct`/`ratio`/`net_drift`/`distribution`. |
+| `schemas.gold` (+S4) | `src/common/schemas/gold.py` | `merchant_activation_schema()`, `book_health_schema()` (tall point-in-time). |
+
+Reuses existing `Thresholds` + the clock business-day calendar (no duplicate numbers — Rule 3) + the S3 rung output / event log (extended with S4 builders `state_transition_event`/`play_fired_event` + 4 nullable cols). Consumed by `transform/gold_activation.py` + `transform/gold_book_health.py` (**Spark drivers — built; tier-2 PASSED + promoted to PROD `gold` 2026-06-02 `failures: []`**) writing point-in-time `gold.merchant_activation` (+`_current`), the `gold.daily_queue` view (sliding-first `queue_rank`), and the `gold.book_health` family (+ 3 `_current` views); `field_maps.SF_WRITEBACK_REFERENCE` documents the FU-401 Salesforce write-back (dedicated `MRI__*` fields).
 
 ## Principles
 
