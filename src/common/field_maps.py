@@ -265,6 +265,120 @@ GOLD_MERCHANT_CLOCK_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
     ("burden_ratio_is_missing", "bool"),
 )
 
+# =============================================================================
+# GOLD layer (S3) — Rung Classifier outputs (Appendix B). POINT-IN-TIME table
+# (D-304), keyed (merchant_id, classify_run_date), append-only + `_current` view —
+# mirrors the S2 clock pattern. Source-label convention here:
+#   "rung:<B.x>"               computed by the Appendix B classifier (NOT Salesforce)
+#   "run:today"                the run's "today" (classify_run_date), point-in-time stamp
+#   "clock:merchant_clock_current.<col>"  read from the S2 merchant clock (spine; never recomputed)
+#   "gold.deals.<col>"         a roll-up over the merchant's canonical Deal Table rows
+# These are MRI-internal classification fields (not the contract's 24 STATIC Deal fields):
+# the Data Contract Merchant Gold Table "rung / lifecycle" section. NO SF stored balances
+# are read — the classifier consumes only S2 clock outputs (CLAUDE.md 2.1).
+# =============================================================================
+
+# gold.merchant_clock_current + gold deals/merchants -> mca_mri.gold.merchant_rung (point-in-time).
+MERCHANT_RUNG_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "clock:merchant_clock_current.merchant_id", Verdict.HAVE, "PK part (with classify_run_date)"),
+    FieldSpec("classify_run_date", "date", "run:today", Verdict.DERIVE, "the run's 'today'; PK part; point-in-time stamp (mirrors clock_run_date)"),
+    FieldSpec("lifecycle_state", "enum", "rung:B.2 lifecycle gate", Verdict.DERIVE, "defaulted / dormant / new-establishing / active"),
+    FieldSpec("rung", "int", "rung:B.3 waterfall (first-match + stress override)", Verdict.DERIVE, "1..5 (Distressed..Graduate); null when gated or Unclassified"),
+    FieldSpec("confidence", "decimal", "rung:D-306 borderline margin", Verdict.DERIVE, "[0.5,1.0] deterministic rules score, NOT an ML probability; missing data never lowers it"),
+    FieldSpec("direction_of_travel", "enum", "rung:4.7 prev->curr health rank", Verdict.DERIVE, "climbing / holding / sliding; prioritizes the daily queue"),
+    FieldSpec("default_subtype", "enum", "rung:B.2 default sub-type", Verdict.CARRY, "v1 always 'unknown' for defaulted (S7 refines, FU-301); null when not defaulted"),
+    FieldSpec("route", "enum", "rung:B.2/B.5 advisory route", Verdict.DERIVE, "do-not-fund / win-back / clock-running / waterfall / review / ..."),
+    FieldSpec("rapid_reup_flag", "bool", "rung:D-302 (owned in common/rung)", Verdict.DERIVE, "prior position <50% paid down & still active at new funding, OR <=45-day gap fallback"),
+    FieldSpec("renewal_chain_incomplete", "bool", "gold.deals.renewal_unlinkable roll-up", Verdict.CARRY, "D-303 data-linkage gap (FU-302); flagged, NEVER a disqualifier"),
+    FieldSpec("missing_signals", "string", "rung:4.7 data-capture roadmap", Verdict.DERIVE, "comma-joined absent signals; absence never lowers confidence (D-306)"),
+)
+
+# Rung DQ / classification-bucket columns (beyond the field set). (col, dtype).
+GOLD_MERCHANT_RUNG_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("is_gated", "bool"),  # lifecycle routed off the waterfall (defaulted/dormant/new) -> rung null
+    ("is_unclassified", "bool"),  # active but no rung matched -> the explicit Unclassified pile
+)
+
+
+def merchant_rung_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_RUNG_MAP] + [
+        c for c, _ in GOLD_MERCHANT_RUNG_DQ_COLUMNS
+    ]
+
+
+# =============================================================================
+# GOLD layer (S4) — Activation (state machine + plays) + Book Health (Appendix/§6).
+# POINT-IN-TIME tables (D-404), mirroring S2/S3. Source-label convention:
+#   "activation:<...>"   computed by common/activation (state machine + plays) — NOT SF
+#   "rung:carry"         carried from gold.merchant_rung_current (single source)
+#   "run:today"          the activation/report run date (point-in-time stamp)
+#   "bookhealth:<...>"   aggregated by transform/gold_book_health
+# NO SF stored balances; NO Salesforce write in S4 (serving layer only, D-403 — the SF
+# write-back is FU-401). The floor reads merchant_activation_current + daily_queue.
+# =============================================================================
+
+# merchant_rung_current + merchant_clock_current -> gold.merchant_activation (point-in-time).
+MERCHANT_ACTIVATION_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "rung:carry", Verdict.HAVE, "PK part (with activation_run_date)"),
+    FieldSpec("activation_run_date", "date", "run:today", Verdict.DERIVE, "point-in-time stamp; PK part (mirrors classify_run_date)"),
+    FieldSpec("current_state", "enum", "activation:state machine (D-401)", Verdict.DERIVE, "clock-running / approaching / in-market / renewed / lost-winback"),
+    FieldSpec("active_play", "enum", "activation:play matrix (D-402)", Verdict.DERIVE, "named floor action; internal rep guidance (NOT comms)"),
+    FieldSpec("play_owner", "string", "activation:SF Opportunity OwnerId", Verdict.CARRY, "accountable rep; null + play_owner_is_missing until ingested (FU-101)"),
+    FieldSpec("play_sla_due", "date", "activation:nth business day after run (D-402)", Verdict.DERIVE, "response deadline; reuses the clock business-day calendar"),
+    FieldSpec("next_tactical_action", "string", "activation:grounded play template", Verdict.DERIVE, "what to do this week (floor script); invents no merchant numbers"),
+    FieldSpec("next_strategic_nudge", "string", "activation:grounded play template", Verdict.DERIVE, "the next rung-climbing move"),
+    FieldSpec("lifecycle_state", "enum", "rung:carry", Verdict.DERIVE, "carried from merchant_rung_current (single source)"),
+    FieldSpec("rung", "int", "rung:carry", Verdict.DERIVE, "1..5 or null; carried"),
+    FieldSpec("direction_of_travel", "enum", "rung:carry", Verdict.DERIVE, "climbing / holding / sliding; carried"),
+    FieldSpec("confidence", "decimal", "rung:carry", Verdict.DERIVE, "deterministic rules score [0,1]; carried (queue ordering)"),
+    FieldSpec("route", "enum", "rung:carry", Verdict.DERIVE, "carried lifecycle/rung route"),
+)
+
+GOLD_MERCHANT_ACTIVATION_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("play_owner_is_missing", "bool"),  # no SF owner available yet (never fabricate accountability)
+)
+
+# gold.book_health — TALL point-in-time scoreboard (D-404). One row per metric value per
+# report_date; the `view` column carries the Framework-5.8 family; `_current` views filter it.
+BOOK_HEALTH_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("report_date", "date", "run:today", Verdict.DERIVE, "point-in-time stamp; PK part"),
+    FieldSpec("view", "enum", "bookhealth:Framework 5.8", Verdict.DERIVE, "book_health / renewal_performance / leading_indicators"),
+    FieldSpec("metric", "string", "bookhealth:metric key", Verdict.DERIVE, "e.g. rung_distribution, sliding_count, rung_drift"),
+    FieldSpec("dimension", "string", "bookhealth:breakdown axis", Verdict.DERIVE, "null for scalars; e.g. 'rung' / 'funder' / 'governing_state'"),
+    FieldSpec("dimension_value", "string", "bookhealth:breakdown value", Verdict.DERIVE, "null for scalars; e.g. '2' / 'Funder A' / 'NY'"),
+    FieldSpec("value_num", "decimal", "bookhealth:aggregate", Verdict.DERIVE, "count / net / scalar value"),
+    FieldSpec("value_pct", "decimal", "bookhealth:share", Verdict.DERIVE, "fraction in [0,1] where applicable; else null"),
+)
+
+# Salesforce write-back FIELD MAP — DOCUMENTATION for FU-401 (NOT written in S4; D-403
+# serving-layer-only). Each entry: (gold activation column, intended SF target, audience).
+# Audience codes (Data Contract): F = floor-only, D = dual (floor + app). Only F/D fields are
+# ever pushed to the floor; never a `_sf_stored_*` column. SF target object/fields are
+# confirmed + created at FU-401 time (sandbox-first, allow_sf_write-gated).
+SF_WRITEBACK_REFERENCE: tuple[tuple[str, str, str], ...] = (
+    ("current_rung", "MRI__Rung__c", "D"),
+    ("lifecycle_state", "MRI__Lifecycle_State__c", "D"),
+    ("current_state", "MRI__Current_State__c", "D"),
+    ("direction_of_travel", "MRI__Direction__c", "D"),
+    ("active_play", "MRI__Active_Play__c", "F"),
+    ("play_owner", "MRI__Play_Owner__c", "F"),
+    ("play_sla_due", "MRI__Play_SLA_Due__c", "F"),
+    ("next_tactical_action", "MRI__Next_Action__c", "F"),
+    ("next_strategic_nudge", "MRI__Next_Nudge__c", "D"),
+    ("rung_confidence", "MRI__Rung_Confidence__c", "D"),
+    ("est_renewal_eligible_date", "MRI__Renewal_Eligible_Date__c", "D"),
+)
+
+
+def merchant_activation_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_ACTIVATION_MAP] + [
+        c for c, _ in GOLD_MERCHANT_ACTIVATION_DQ_COLUMNS
+    ]
+
+
+def book_health_columns() -> list[str]:
+    return [fs.silver_col for fs in BOOK_HEALTH_MAP]
+
 
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]

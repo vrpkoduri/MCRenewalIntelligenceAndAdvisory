@@ -47,6 +47,14 @@ databricks workspace delete "$STAGE" --recursive   # clean up staging
 - **Verify on `gold_test` first** (default; `allow_prod=False`). **PROD `gold` write requires `schema=gold` AND `allow_prod=True`** — gated on explicit approval (Rule 5).
 - The production cadence is a **daily DAB job** (defined as code; scheduling/activation is itself approval-gated — not auto-enabled).
 
+## Daily rung classify (S3, Appendix B)
+
+`transform/gold_rung.build_gold_rung(spark, schema, run_date, allow_prod)` classifies the whole book for one `run_date` (defaults to today) from the **S2 clock** (`gold.merchant_clock_current` + `gold.deal_clock_current`) + `gold.deals`/`gold.merchants` — it READS the clock and **never recomputes the spine**. Writes point-in-time `gold.merchant_rung` (+`merchant_rung_current` view, `replaceWhere` idempotent per `classify_run_date`) and appends classification + transition events to `gold.merchant_event_log`. The per-merchant logic is the pure `common.rung` engine applied via UDFs (no Spark reimplementation).
+
+- Tier-2 recipe = the block above with `recon_rung.py` / `run_tier2_rung` (the `second_run` widget, default true, does a 2nd run at `run_date + 1 day` to exercise the state machine; set `second_run=false` for a clean single-partition prod build). **Verified on `gold_test` then PROMOTED to PROD `gold` 2026-06-02 (`failures: []`).**
+- **PROD `gold` write requires `schema=gold` AND `allow_prod=True`** — gated on explicit approval (Rule 5). Done 2026-06-02.
+- `confidence` is a deterministic rules score (D-306), NOT an ML probability (ML is S6).
+
 ## Unity Catalog quick reference
 
 ```bash

@@ -88,6 +88,179 @@ class ClosureStatus:
     ALL = frozenset({ACTIVE, CLOSED_CLEAN, CLOSED_DEFAULT})
 
 
+# --- Rung Classifier (Appendix B, S3 / C-017) ------------------------------------
+# The two axes (B.1): every merchant carries a LifecycleState (where they are in the
+# funding cycle); active merchants additionally carry a RungState (health rung 1-5).
+# Pure-Python enums (no Spark) so common/rung is tier-1 testable.
+
+
+class LifecycleState:
+    """Step-0 lifecycle gate routes (Appendix B.2). String values match the
+    `expected.lifecycle_state` in the four-merchant fixtures."""
+
+    DEFAULTED = "defaulted"  # a position computed closed_default (Starr) -> sub-type + route
+    DORMANT = "dormant"  # idle > 2x median renewal gap, no active positions (OBP) -> win-back
+    NEW_ESTABLISHING = "new-establishing"  # single recent position, no renewal history (Snell)
+    ACTIVE = "active"  # >=1 open position -> proceed to the rung waterfall (Wolf)
+    ALL = frozenset({DEFAULTED, DORMANT, NEW_ESTABLISHING, ACTIVE})
+
+
+class RungState:
+    """Health rung 1-5 (Appendix B.3 / Framework 4.2-4.6). 1 = worst (Distressed),
+    5 = best (Graduate). `rung` is an int 1..5, or None for gated/Unclassified."""
+
+    DISTRESSED = 1
+    SERIAL = 2
+    DISCIPLINED = 3
+    GROWTH = 4
+    GRADUATE = 5
+    ALL = frozenset({DISTRESSED, SERIAL, DISCIPLINED, GROWTH, GRADUATE})
+    NAMES = {
+        DISTRESSED: "distressed",
+        SERIAL: "serial",
+        DISCIPLINED: "disciplined",
+        GROWTH: "growth",
+        GRADUATE: "graduate",
+    }
+
+
+class DefaultSubtype:
+    """Defaulted sub-typing + routing (Appendix B.2). v1 cannot reliably sub-type
+    (gated on the data audit / S7 Data Steward), so an undetermined default is
+    treated `unknown` -> do-not-fund — the conservative interim (misrouting a true
+    default to win-back is the costlier error). Starr -> unknown."""
+
+    TRUE_DEFAULT = "true_default"  # -> distressed/exit (do-not-fund, restructuring referral)
+    EARLY_PAYOFF = "early_payoff"  # early-payoff / clawback -> win-back (a healthy merchant who left)
+    RESTRUCTURED = "restructured"  # -> impaired-managed
+    UNKNOWN = "unknown"  # undetermined -> do-not-fund + flag for review (v1 default)
+    ALL = frozenset({TRUE_DEFAULT, EARLY_PAYOFF, RESTRUCTURED, UNKNOWN})
+
+
+class LifecycleRoute:
+    """The advisory action a lifecycle/rung outcome routes to (Appendix B.2 / B.5).
+    Carried alongside the rung so S4 activation knows what to do; not an ML output."""
+
+    DO_NOT_FUND = "do-not-fund"  # defaulted, sub-type unknown -> review (Starr)
+    DISTRESSED_EXIT = "distressed-exit"  # confirmed true default -> graceful off-boarding
+    IMPAIRED_MANAGED = "impaired-managed"  # restructured default
+    WIN_BACK = "win-back"  # dormant, or early-payoff/clawback default (OBP)
+    CLOCK_RUNNING = "clock-running"  # new/establishing — healthy, not yet Disciplined (Snell)
+    WATERFALL = "waterfall"  # active -> rung placed by the waterfall (Wolf -> Serial eval)
+    REVIEW = "review"  # Unclassified — key signals missing, needs data capture
+    ALL = frozenset(
+        {DO_NOT_FUND, DISTRESSED_EXIT, IMPAIRED_MANAGED, WIN_BACK, CLOCK_RUNNING, WATERFALL, REVIEW}
+    )
+
+
+class DirectionOfTravel:
+    """Run-over-run trajectory (Framework 4.7) — lets the daily queue prioritize a
+    sliding disciplined merchant over a stable one. Deterministic from prev->curr rank."""
+
+    CLIMBING = "climbing"  # moved to a healthier rung/state
+    HOLDING = "holding"  # unchanged (or no prior run / not comparable)
+    SLIDING = "sliding"  # moved to a less-healthy rung/state — the high-value early alert
+    ALL = frozenset({CLIMBING, HOLDING, SLIDING})
+
+
+class EventType:
+    """Append-only event log (D-305). v1 (S3) emits classification + transition events into
+    ONE wide table keyed (merchant_id, event_type, event_ts); S4 adds activation event types
+    (state-transition + play_fired); S5/S8 append offer/comms/touch types to the same log."""
+
+    CLASSIFICATION = "classification"  # one per merchant per classify_run_date (S3)
+    TRANSITION = "transition"  # emitted when lifecycle_state or rung changed run-over-run (S3)
+    STATE_TRANSITION = "state_transition"  # current_state changed run-over-run (S4 activation)
+    PLAY_FIRED = "play_fired"  # a named play assigned/changed for a merchant (S4 activation)
+    ALL = frozenset({CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED})
+
+
+# rapid_reup_flag (D-302) — owned in common/rung (nothing computes it upstream today).
+# Fallback day-gap threshold used ONLY when the prior position's paydown can't be computed
+# (the paydown-based test is PRIMARY). Calibratable once the book's gap distribution is seen.
+RAPID_REUP_MAX_GAP_DAYS = 45
+
+
+# --- Activation: state machine + plays (Build Plan §6, Framework 5.8, S4 / C-018) ---
+# The operational layer over the S3 rung/lifecycle: an action-oriented `current_state`, a
+# named `active_play`, an SLA, and grounded next-actions — the floor's read surface. Pure
+# enums (no Spark) so common/activation is tier-1 testable. Reads S1/S2/S3 gold; never
+# recomputes the spine. NO Salesforce write in S4 (D-403 — serving layer only; SF write-back
+# is FU-401). NO merchant comms (S8).
+
+
+class CurrentState:
+    """State machine (D-401) — where a merchant is in the operational funding cycle. Distinct
+    from S3 `lifecycle_state`: gated lifecycle states map to `lost-winback`; active merchants
+    resolve to a clock-driven operational state."""
+
+    CLOCK_RUNNING = "clock-running"  # active, paying down, not yet approaching eligibility
+    APPROACHING = "approaching"  # active, eligible within APPROACHING_WINDOW_DAYS
+    IN_MARKET = "in-market"  # active & is_eligible_now (paydown >= renewal threshold)
+    RENEWED = "renewed"  # active, just took a new advance (within RENEWED_WINDOW_DAYS)
+    LOST_WINBACK = "lost-winback"  # dormant / defaulted (gated) — win-back or do-not-fund-review
+    ALL = frozenset({CLOCK_RUNNING, APPROACHING, IN_MARKET, RENEWED, LOST_WINBACK})
+
+
+# Windows for the state machine (D-401, calibratable). Distinct concepts, same v1 horizon:
+# `approaching` looks FORWARD to est_renewal_eligible_date; `renewed` looks BACK to the last
+# funded_date. Kept separate so each calibrates independently (not a Rule-3 duplicate).
+APPROACHING_WINDOW_DAYS = 30
+RENEWED_WINDOW_DAYS = 30
+
+
+class Play:
+    """Named plays (D-402) — the floor action for a merchant, assigned by a deterministic
+    priority matrix over (lifecycle/route, rung, current_state, direction_of_travel).
+    Internal rep guidance only — NOT merchant comms (S8)."""
+
+    DO_NOT_FUND_REVIEW = "do-not-fund-review"  # defaulted, sub-type unknown (Starr)
+    WIN_BACK = "win-back"  # dormant (One Big Promotion)
+    NEW_ESTABLISHING_NURTURE = "new-establishing-nurture"  # single fresh position (Tom Snell)
+    DISTRESSED_STABILIZE = "distressed-stabilize"  # rung 1 — position statement + capacity hold
+    SLIDE_INTERVENTION = "slide-intervention"  # direction sliding — catch the slide early
+    SERIAL_RENEWAL_VS_BUYOUT = "serial-renewal-vs-buyout"  # rung 2 (Wolf) — show the double-dip delta
+    IN_MARKET_RENEWAL = "in-market-renewal"  # eligible & disciplined-or-better
+    APPROACHING_PREP = "approaching-prep"  # eligibility window opening soon
+    GROWTH_UPSELL = "growth-upsell"  # rung 4 — structured, honest upsell
+    GRADUATE_REFERRAL = "graduate-referral"  # rung 5 — help to cheaper capital
+    REVIEW_UNCLASSIFIED = "review-unclassified"  # active, no rung — data capture
+    DISCIPLINED_REINFORCE = "disciplined-reinforce"  # steady disciplined renewer — value-first
+    ALL = frozenset({
+        DO_NOT_FUND_REVIEW, WIN_BACK, NEW_ESTABLISHING_NURTURE, DISTRESSED_STABILIZE,
+        SLIDE_INTERVENTION, SERIAL_RENEWAL_VS_BUYOUT, IN_MARKET_RENEWAL, APPROACHING_PREP,
+        GROWTH_UPSELL, GRADUATE_REFERRAL, REVIEW_UNCLASSIFIED, DISCIPLINED_REINFORCE,
+    })
+
+
+# Play SLA tiers in BUSINESS days (D-402, calibratable). play_sla_due is the nth business day
+# after the activation run (reuses common.clock.calendar.nth_business_day_after — Rule 3).
+PLAY_SLA_BUSINESS_DAYS = {
+    Play.DISTRESSED_STABILIZE: 2,
+    Play.SLIDE_INTERVENTION: 2,
+    Play.IN_MARKET_RENEWAL: 5,
+    Play.SERIAL_RENEWAL_VS_BUYOUT: 5,
+    Play.GROWTH_UPSELL: 5,
+    Play.DO_NOT_FUND_REVIEW: 5,
+    Play.WIN_BACK: 10,
+    Play.NEW_ESTABLISHING_NURTURE: 10,
+    Play.APPROACHING_PREP: 10,
+    Play.GRADUATE_REFERRAL: 10,
+    Play.REVIEW_UNCLASSIFIED: 10,
+    Play.DISCIPLINED_REINFORCE: 10,
+}
+
+
+class BookHealthView:
+    """Portfolio Analytics / Book Health views (Framework 5.8 / Data Contract). The point-in-
+    time `gold.book_health` table carries a `view` column; one `_current` view per family."""
+
+    BOOK_HEALTH = "book_health"
+    RENEWAL_PERFORMANCE = "renewal_performance"
+    LEADING_INDICATORS = "leading_indicators"
+    ALL = frozenset({BOOK_HEALTH, RENEWAL_PERFORMANCE, LEADING_INDICATORS})
+
+
 class Verdict:
     """Data Contract availability verdicts."""
 
@@ -161,6 +334,24 @@ class GoldTable:
     MERCHANT_CLOCK = "merchant_clock"
     DEAL_CLOCK_CURRENT = "deal_clock_current"
     MERCHANT_CLOCK_CURRENT = "merchant_clock_current"
+    # S3 Rung Classifier (Appendix B) — separate POINT-IN-TIME rung table (D-304),
+    # keyed (merchant_id, classify_run_date), append-only with a `*_current` view, and
+    # ONE wide append-only event log (D-305) keyed (merchant_id, event_type, event_ts).
+    # Mirrors the S2 clock pattern: daily classify never overwrites a prior run (auditable).
+    MERCHANT_RUNG = "merchant_rung"
+    MERCHANT_RUNG_CURRENT = "merchant_rung_current"
+    MERCHANT_EVENT_LOG = "merchant_event_log"
+    # S4 Activation (Build Plan §6 / C-018) — point-in-time `merchant_activation`
+    # (+ `_current` view), the `daily_queue` read view (floor consumption surface), and the
+    # point-in-time `book_health` scoreboard family (+ per-view `_current` views). Mirrors the
+    # S2/S3 point-in-time pattern. NO Salesforce write in S4 (serving layer only, D-403).
+    MERCHANT_ACTIVATION = "merchant_activation"
+    MERCHANT_ACTIVATION_CURRENT = "merchant_activation_current"
+    DAILY_QUEUE = "daily_queue"
+    BOOK_HEALTH = "book_health"
+    BOOK_HEALTH_CURRENT = "book_health_current"
+    RENEWAL_PERFORMANCE_CURRENT = "renewal_performance_current"
+    LEADING_INDICATORS_CURRENT = "leading_indicators_current"
 
 
 class Identity:
