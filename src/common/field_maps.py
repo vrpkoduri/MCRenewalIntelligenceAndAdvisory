@@ -380,6 +380,41 @@ def book_health_columns() -> list[str]:
     return [fs.silver_col for fs in BOOK_HEALTH_MAP]
 
 
+# =============================================================================
+# GOLD layer (S5) — Offer Engine outputs (Build Plan §6 / Framework §5.7). POINT-IN-TIME
+# `merchant_offers` keyed (merchant_id, offer_run_date), append-only + `_current` view
+# (mirrors S2/S3/S4). Source-label convention:
+#   "offer:<...>"        computed by common/offer (offer types, structure, suitability)
+#   "funder:reuse"       from REUSING the existing routing engine (mca_funders) — NOT rebuilt
+#   "run:today"          the proactive-scan run date (the tap-early cadence marker)
+# NO writes to mca_funders; NO SF stored balances; NO offer SENT (proposes only — S8 delivers).
+# =============================================================================
+
+MERCHANT_OFFERS_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "offer:from gold.merchants", Verdict.HAVE, "PK part (with offer_run_date)"),
+    FieldSpec("offer_run_date", "date", "run:today", Verdict.DERIVE, "proactive-scan date; PK part; = offer_refresh_date"),
+    FieldSpec("eligible_offer_types", "string", "offer:D-504 candidates ∩ funder match", Verdict.DERIVE, "comma-joined: renewal / buyout / larger-advance / none-yet"),
+    FieldSpec("matched_funders", "string", "funder:reuse routing_program_evaluations", Verdict.REUSE, "comma-joined funders whose box the merchant fits (from the existing engine); empty when none"),
+    FieldSpec("max_sustainable_advance", "decimal", "offer:capacity (revenue-dependent)", Verdict.DERIVE, "D-505: null in v1 (no revenue feed, FU-301) → max_sustainable_advance_is_missing; never a fabricated ceiling"),
+    FieldSpec("best_offer_summary", "string", "offer:plain-language best credible option", Verdict.DERIVE, "drafted from the matched option + suitability; honest, no invented numbers"),
+    FieldSpec("recommended_structure", "enum", "offer:D-506 renewal-vs-buyout", Verdict.DERIVE, "renewal / buyout / wait-and-paydown (the math decides)"),
+    FieldSpec("double_dip_cost", "decimal", "offer:est_current_balance × (factor−1)", Verdict.DERIVE, "honest rollover cost surfaced for the structure decision; null when inputs missing"),
+    FieldSpec("suitability_verdict", "enum", "offer:D-506 gate", Verdict.DERIVE, "surface / suppress / wait — engine proposes, advisory disposes"),
+    FieldSpec("offer_refresh_date", "date", "run:today", Verdict.DERIVE, "tap-early cadence marker (= offer_run_date)"),
+)
+
+GOLD_MERCHANT_OFFERS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("max_sustainable_advance_is_missing", "bool"),  # revenue-dependent; null+flag in v1 (FU-301)
+    ("offer_profile_unmatched", "bool"),  # merchant did not join to the funder engine (id gap) → none-yet
+)
+
+
+def merchant_offers_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_OFFERS_MAP] + [
+        c for c, _ in GOLD_MERCHANT_OFFERS_DQ_COLUMNS
+    ]
+
+
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
 
