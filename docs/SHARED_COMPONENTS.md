@@ -6,7 +6,7 @@ Reusable libraries with stable contracts, centralized so they change in one plac
 
 | Component | Path | Contract / purpose |
 |---|---|---|
-| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType; S4: CurrentState, Play, BookHealthView; S5: OfferType, OfferStructure, SuitabilityVerdict, FunderCatalog**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, `APPROACHING_WINDOW_DAYS`/`RENEWED_WINDOW_DAYS`, `PLAY_SLA_BUSINESS_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
+| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType; S4: CurrentState, Play, BookHealthView; S5: OfferType, OfferStructure, SuitabilityVerdict, FunderCatalog; S6: EventType.PREDICTION, CLV/insufficient-history/Cox-covariate config**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, `APPROACHING_WINDOW_DAYS`/`RENEWED_WINDOW_DAYS`, `PLAY_SLA_BUSINESS_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
 | `field_maps` | `src/common/field_maps.py` | SPRINT_0 bronze→silver maps as `FieldSpec` data (deals, field_history) + DQ-derived columns. The rename/typing spec the transform reads. |
 | `contract` | `src/common/contract.py` | Loads the authoritative Data Contract xlsx; exposes Deal/Merchant-Gold field→verdict maps for drift tests. |
 | `dq.predicates` | `src/common/dq/predicates.py` | Pure-Python DQ semantics: missing-implausible-zero, date-sanity, RTR check. Tier-1 testable; the canonical spec. |
@@ -75,6 +75,19 @@ D-503…D-508 signed 2026-06-02; **pure modules built + tier-1 green (270 tier-1
 | `schemas.gold` (+S5) | `src/common/schemas/gold.py` | `merchant_offers_schema()` (point-in-time). |
 
 Reuses existing `Thresholds` + the S2/S3/S4 outputs (no duplicate numbers — Rule 3). `constants.FunderCatalog` holds the `mca_funders` fq names (read-only reuse target). Consumed by `transform/gold_offers.py` (**build pending — gated on D-501**) writing point-in-time `gold.merchant_offers` (+`_current`); `matched_funders` is sourced by REUSING the routing engine, never rebuilt.
+
+## Built (Sprint 6 — Prediction feature/label derivation, §6/11.2)
+
+D-601…D-609 signed 2026-06-02 (C-020); **pure modules built + tier-1 green (284 tier-1).** First ML sprint — the MODELS (PyMC-Marketing BG/NBD+Gamma-Gamma+CLV; lifelines Cox+KM) are ADOPTED and fit on Databricks (`transform/gold_predictions.py`, **build gated on D-602**); MRI owns only feature/label derivation + orchestration (CLAUDE.md §4). Pure / Spark+ML-free at import. Distress stays signal-driven (S3).
+
+| Component | Path | Contract / purpose |
+|---|---|---|
+| `prediction.rfm` | `src/common/prediction/rfm.py` | D-601 `rfm_features`: frequency (deal_count−1) / recency / T / monetary for BG/NBD + Gamma-Gamma. |
+| `prediction.survival` | `src/common/prediction/survival.py` | D-607 `inter_advance_intervals` / `censored_duration` / `survival_rows`: observed intervals (event=1) + censored tail (event=0) for lifelines Cox/KM — not-yet-renewed = censored, never dropped. |
+| `prediction.confidence` | `src/common/prediction/confidence.py` | D-603 `prediction_confidence` (posterior-width else history), `is_insufficient_history` (thin merchants → prior + wide confidence). |
+| `schemas.gold` (+S6) | `src/common/schemas/gold.py` | `merchant_predictions_schema()` (point-in-time). |
+
+Reuses existing `Thresholds` + the deal history / event log (no duplicate numbers — Rule 3). `constants` adds the CLV horizon/discount + `INSUFFICIENT_HISTORY_MIN_EVENTS` + `COX_COVARIATES` (calibration home). Consumed by `transform/gold_predictions.py` (**build pending — gated**) writing point-in-time `gold.merchant_predictions` (+`_current`) + `prediction` events, MLflow-versioned (`model_version`).
 
 ## Principles
 

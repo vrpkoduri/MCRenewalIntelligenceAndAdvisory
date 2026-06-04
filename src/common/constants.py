@@ -173,7 +173,10 @@ class EventType:
     STATE_TRANSITION = "state_transition"  # current_state changed run-over-run (S4 activation)
     PLAY_FIRED = "play_fired"  # a named play assigned/changed for a merchant (S4 activation)
     OFFER_COMPUTED = "offer_computed"  # a proactive offer scan produced/changed options (S5)
-    ALL = frozenset({CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED, OFFER_COMPUTED})
+    PREDICTION = "prediction"  # a model inference produced/updated predictions for a merchant (S6)
+    ALL = frozenset(
+        {CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED, OFFER_COMPUTED, PREDICTION}
+    )
 
 
 # rapid_reup_flag (D-302) — owned in common/rung (nothing computes it upstream today).
@@ -324,6 +327,30 @@ class FunderCatalog:
     FUNDERS = "silver.funders"
 
 
+# --- Prediction Models (Build Plan §6, Framework §11.2, S6 / C-020) ---------------
+# First ML sprint: ADOPT PyMC-Marketing (BG/NBD + Gamma-Gamma + CLV) + lifelines (Cox PH +
+# KM), not hand-built. The RFM/survival feature derivation is pure (tier-1 testable here);
+# the model fitting runs on Databricks. Calibration config lives here (one place, Rule 3).
+
+# A merchant needs at least this many REPEAT advances (frequency) for an individual
+# data-driven fit; below it -> `insufficient_history` (book-level prior + wide confidence,
+# Cox-censored). Spike (2026-06-02): 1,329/2,125 single-deal merchants land here. (D-603)
+INSUFFICIENT_HISTORY_MIN_EVENTS = 1
+
+# CLV horizon + discount rate for PyMC-Marketing CLV (NPV). Calibratable. (D-606)
+CLV_HORIZON_MONTHS = 12
+CLV_DISCOUNT_RATE_ANNUAL = 0.12
+
+# lifelines Cox covariates for the "time to next advance" model (D-607). `burden_ratio` is
+# intentionally EXCLUDED — null book-wide in v1 (no revenue feed, FU-301); folds in later.
+COX_COVARIATES = (
+    "factor_trend",
+    "active_position_cnt",
+    "payment_health",
+    "industry_vertical",
+)
+
+
 class Verdict:
     """Data Contract availability verdicts."""
 
@@ -415,6 +442,11 @@ class GoldTable:
     # (+ `_current` view), reusing the existing routing engine. NO writes to mca_funders.
     MERCHANT_OFFERS = "merchant_offers"
     MERCHANT_OFFERS_CURRENT = "merchant_offers_current"
+    # S6 Prediction (Build Plan §6 / Framework §11.2) — point-in-time `merchant_predictions`
+    # (+ `_current` view): BTYD (p_alive/CLV) + survival (next-event) + confidence. Batch
+    # inference (D-605); models adopted (PyMC-Marketing + lifelines), MLflow-versioned.
+    MERCHANT_PREDICTIONS = "merchant_predictions"
+    MERCHANT_PREDICTIONS_CURRENT = "merchant_predictions_current"
     BOOK_HEALTH = "book_health"
     BOOK_HEALTH_CURRENT = "book_health_current"
     RENEWAL_PERFORMANCE_CURRENT = "renewal_performance_current"

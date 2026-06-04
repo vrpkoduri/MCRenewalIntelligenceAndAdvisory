@@ -68,3 +68,9 @@ Later added: 4 S4 event-log builder tests (`test_eventlog`) + 1 Book Health defe
 Added: `test_offer` (19). Covers the renewal-vs-buyout double-dip math + structure recommendation (Wolf → wait-and-paydown), the suitability gate (suppress a double-dip buyout / wait), candidate `eligible_offer_types`, profile assembly with honest missing-field flags, and map/no-surface/Reuse invariants.
 **Result (2026-06-02): 19 new → 270 passed, 0 failed (tier-1).**
 Pending: **D-501 reuse-mechanism decision** before `transform/gold_offers.py`; then tier-2 on `gold_test` — reconcile a sample to the existing engine's `routing_program_evaluations` (prove reuse, not reinvent), whole-book coverage, suitability-gate suppression, offer-event append integrity. (Spike: existing evaluations have 0 id-overlap with the funded book → the engine must run on MRI profiles.)
+
+### Sprint 6 (Prediction — feature/label derivation; adopted models, §6/11.2)
+Added: `test_prediction` (14). Covers RFM features (single-deal → frequency 0; multi-deal recency/frequency/T/monetary; missing amount not faked), survival labeling + **censoring** (single-deal = censored-not-dropped), confidence (posterior-width else monotonic history; insufficient-history threshold), and map/no-surface/`model_version` invariants.
+**Result (2026-06-02): 14 new → 284 passed, 0 failed (tier-1).**
+Readiness spike (read-only): 796/2,125 repeat merchants (training pop; 358 active) vs 1,329 single-deal (insufficient_history); 1,834 intervals, median 81 days → real Cox signal.
+Pending (tier-2, gated — D-602 libs + Rule 5): `transform/gold_predictions.py` (PyMC-Marketing + lifelines + MLflow) fit on real history; backtest (time-split, calibration + ordering, KM baseline per rung); bounds/coverage; insufficient_history pile; prediction-event append integrity.

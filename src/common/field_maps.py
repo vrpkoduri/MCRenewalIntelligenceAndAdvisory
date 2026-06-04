@@ -415,6 +415,44 @@ def merchant_offers_columns() -> list[str]:
     ]
 
 
+# =============================================================================
+# GOLD layer (S6) — Prediction outputs (Build Plan §6 / Framework §11.2). POINT-IN-TIME
+# `merchant_predictions` keyed (merchant_id, prediction_run_date), append-only + `_current`
+# (mirrors S2–S5). Source-label convention:
+#   "predict:rfm"        deterministic RFM features (common/prediction; tier-1 tested)
+#   "predict:BTYD"       PyMC-Marketing BG/NBD + Gamma-Gamma + CLV output (model)
+#   "predict:survival"   lifelines Cox PH output (model)
+#   "run:today"          the inference run date (point-in-time stamp)
+# Models ADOPTED (not hand-built); MLflow-versioned (model_version). Distress is NOT model-
+# driven (S3 owns it). NO SF stored balances.
+# =============================================================================
+
+MERCHANT_PREDICTIONS_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "predict:from gold.merchants", Verdict.HAVE, "PK part (with prediction_run_date)"),
+    FieldSpec("prediction_run_date", "date", "run:today", Verdict.DERIVE, "inference run date; PK part (mirrors clock_run_date)"),
+    FieldSpec("rfm_recency", "int", "predict:rfm last−first advance (days)", Verdict.DERIVE, "BG/NBD recency"),
+    FieldSpec("rfm_frequency", "int", "predict:rfm deal_count−1", Verdict.DERIVE, "BG/NBD repeat-advance count"),
+    FieldSpec("rfm_T", "int", "predict:rfm today−first advance (days)", Verdict.DERIVE, "BG/NBD observation-window age"),
+    FieldSpec("rfm_monetary", "decimal", "predict:rfm avg funded_amount", Verdict.DERIVE, "Gamma-Gamma monetary value"),
+    FieldSpec("p_alive", "decimal", "predict:BTYD BG/NBD", Verdict.DERIVE, "[0,1] probability still active"),
+    FieldSpec("p_defection", "decimal", "predict:BTYD 1−p_alive (adj.)", Verdict.DERIVE, "[0,1] take-next-capital-elsewhere risk; win-back trigger"),
+    FieldSpec("predicted_next_event_date", "date", "predict:survival Cox PH", Verdict.DERIVE, "predicted next capital-event timing; queue: in-market"),
+    FieldSpec("predicted_clv", "decimal", "predict:BTYD CLV (NPV)", Verdict.DERIVE, "net-present lifetime value over the configured horizon/discount"),
+    FieldSpec("prediction_confidence", "decimal", "predict:posterior width / history", Verdict.DERIVE, "[0,1] uncertainty band — governs soft vs firm advice framing; NOT accuracy"),
+    FieldSpec("model_version", "string", "predict:MLflow", Verdict.DERIVE, "ruleset/model version — reproducibility & audit (Event Log contract)"),
+)
+
+GOLD_MERCHANT_PREDICTIONS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("insufficient_history", "bool"),  # repeat events < INSUFFICIENT_HISTORY_MIN_EVENTS → prior-only + wide confidence
+)
+
+
+def merchant_predictions_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_PREDICTIONS_MAP] + [
+        c for c, _ in GOLD_MERCHANT_PREDICTIONS_DQ_COLUMNS
+    ]
+
+
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
 
