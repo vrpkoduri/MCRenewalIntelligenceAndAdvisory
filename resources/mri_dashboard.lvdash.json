@@ -72,11 +72,11 @@
                   "datasetName": "ds_counts",
                   "fields": [
                     {
-                      "name": "total_merchants",
-                      "expression": "`total_merchants`"
+                      "name": "sum_total_merchants",
+                      "expression": "SUM(`total_merchants`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -85,7 +85,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "total_merchants",
+                  "fieldName": "sum_total_merchants",
                   "displayName": "Total merchants"
                 }
               }
@@ -108,11 +108,11 @@
                   "datasetName": "ds_counts",
                   "fields": [
                     {
-                      "name": "active_merchants",
-                      "expression": "`active_merchants`"
+                      "name": "sum_active_merchants",
+                      "expression": "SUM(`active_merchants`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -121,7 +121,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "active_merchants",
+                  "fieldName": "sum_active_merchants",
                   "displayName": "Active"
                 }
               }
@@ -144,11 +144,11 @@
                   "datasetName": "ds_counts",
                   "fields": [
                     {
-                      "name": "sliding_merchants",
-                      "expression": "`sliding_merchants`"
+                      "name": "sum_sliding_merchants",
+                      "expression": "SUM(`sliding_merchants`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -157,7 +157,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sliding_merchants",
+                  "fieldName": "sum_sliding_merchants",
                   "displayName": "Sliding"
                 }
               }
@@ -180,11 +180,11 @@
                   "datasetName": "ds_state_counts",
                   "fields": [
                     {
-                      "name": "approaching",
-                      "expression": "`approaching`"
+                      "name": "sum_approaching",
+                      "expression": "SUM(`approaching`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -193,7 +193,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "approaching",
+                  "fieldName": "sum_approaching",
                   "displayName": "Approaching"
                 }
               }
@@ -216,11 +216,11 @@
                   "datasetName": "ds_counts",
                   "fields": [
                     {
-                      "name": "defaulted_merchants",
-                      "expression": "`defaulted_merchants`"
+                      "name": "sum_defaulted_merchants",
+                      "expression": "SUM(`defaulted_merchants`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -229,7 +229,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "defaulted_merchants",
+                  "fieldName": "sum_defaulted_merchants",
                   "displayName": "Defaulted"
                 }
               }
@@ -252,11 +252,11 @@
                   "datasetName": "ds_counts",
                   "fields": [
                     {
-                      "name": "unclassified_merchants",
-                      "expression": "`unclassified_merchants`"
+                      "name": "sum_unclassified_merchants",
+                      "expression": "SUM(`unclassified_merchants`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -265,7 +265,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "unclassified_merchants",
+                  "fieldName": "sum_unclassified_merchants",
                   "displayName": "Unclassified"
                 }
               }
@@ -292,11 +292,11 @@
                       "expression": "`rung_label`"
                     },
                     {
-                      "name": "n",
-                      "expression": "`n`"
+                      "name": "sum_n",
+                      "expression": "SUM(`n`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -312,7 +312,7 @@
                   "displayName": "Rung"
                 },
                 "y": {
-                  "fieldName": "n",
+                  "fieldName": "sum_n",
                   "scale": {
                     "type": "quantitative"
                   },
@@ -342,11 +342,11 @@
                       "expression": "`lifecycle_state`"
                     },
                     {
-                      "name": "n",
-                      "expression": "`n`"
+                      "name": "sum_n",
+                      "expression": "SUM(`n`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -362,7 +362,7 @@
                   "displayName": "Lifecycle"
                 },
                 "y": {
-                  "fieldName": "n",
+                  "fieldName": "sum_n",
                   "scale": {
                     "type": "quantitative"
                   },
@@ -392,11 +392,11 @@
                       "expression": "`active_play`"
                     },
                     {
-                      "name": "n",
-                      "expression": "`n`"
+                      "name": "sum_n",
+                      "expression": "SUM(`n`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -412,7 +412,7 @@
                   "displayName": "Play"
                 },
                 "y": {
-                  "fieldName": "n",
+                  "fieldName": "sum_n",
                   "scale": {
                     "type": "quantitative"
                   },

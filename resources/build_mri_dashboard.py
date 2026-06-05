@@ -69,34 +69,40 @@ DATASETS = [
 
 
 def _counter(name, dataset, field, display, x, y):
+    # Lakeview counters need an AGGREGATE expression + disaggregated:false (datasets here are
+    # already single-row aggregates, so SUM is a no-op that returns the value).
+    agg = f"sum_{field}"
     return {
         "widget": {
             "name": name,
             "queries": [{"name": "main", "query": {
                 "datasetName": dataset,
-                "fields": [{"name": field, "expression": f"`{field}`"}],
-                "disaggregated": True,
+                "fields": [{"name": agg, "expression": f"SUM(`{field}`)"}],
+                "disaggregated": False,
             }}],
             "spec": {"version": 2, "widgetType": "counter",
-                     "encodings": {"value": {"fieldName": field, "displayName": display}}},
+                     "encodings": {"value": {"fieldName": agg, "displayName": display}}},
         },
         "position": {"x": x, "y": y, "width": 1, "height": 3},
     }
 
 
 def _bar(name, dataset, xf, yf, xlabel, ylabel, x, y, w=2, h=6):
+    # Bar: x = the (raw) category, y = an AGGREGATE (SUM over the pre-grouped dataset),
+    # disaggregated:false — the canonical Lakeview form.
+    yagg = f"sum_{yf}"
     return {
         "widget": {
             "name": name,
             "queries": [{"name": "main", "query": {
                 "datasetName": dataset,
-                "fields": [{"name": xf, "expression": f"`{xf}`"}, {"name": yf, "expression": f"`{yf}`"}],
-                "disaggregated": True,
+                "fields": [{"name": xf, "expression": f"`{xf}`"}, {"name": yagg, "expression": f"SUM(`{yf}`)"}],
+                "disaggregated": False,
             }}],
             "spec": {"version": 3, "widgetType": "bar",
                      "encodings": {
                          "x": {"fieldName": xf, "scale": {"type": "categorical"}, "displayName": xlabel},
-                         "y": {"fieldName": yf, "scale": {"type": "quantitative"}, "displayName": ylabel},
+                         "y": {"fieldName": yagg, "scale": {"type": "quantitative"}, "displayName": ylabel},
                      }},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
