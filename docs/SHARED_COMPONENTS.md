@@ -6,7 +6,7 @@ Reusable libraries with stable contracts, centralized so they change in one plac
 
 | Component | Path | Contract / purpose |
 |---|---|---|
-| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType; S4: CurrentState, Play, BookHealthView**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, `APPROACHING_WINDOW_DAYS`/`RENEWED_WINDOW_DAYS`, `PLAY_SLA_BUSINESS_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
+| `constants` | `src/common/constants.py` | Catalog/schema/table names, SF object names, enums (DealType, PaymentFrequency, BalanceSource, ClosureStatus, Verdict; **S3: LifecycleState, RungState, DefaultSubtype, LifecycleRoute, DirectionOfTravel, EventType; S4: CurrentState, Play, BookHealthView; S5: OfferType, OfferStructure, SuitabilityVerdict, FunderCatalog; S6: EventType.PREDICTION, CLV/insufficient-history/Cox-covariate config**), no-surface set, RTR tolerance, `DEFAULT_NOTE_KEYWORDS`, `RAPID_REUP_MAX_GAP_DAYS`, `APPROACHING_WINDOW_DAYS`/`RENEWED_WINDOW_DAYS`, `PLAY_SLA_BUSINESS_DAYS`, Appendix A/B `Thresholds` (single calibration home). Pure Python. |
 | `field_maps` | `src/common/field_maps.py` | SPRINT_0 bronze→silver maps as `FieldSpec` data (deals, field_history) + DQ-derived columns. The rename/typing spec the transform reads. |
 | `contract` | `src/common/contract.py` | Loads the authoritative Data Contract xlsx; exposes Deal/Merchant-Gold field→verdict maps for drift tests. |
 | `dq.predicates` | `src/common/dq/predicates.py` | Pure-Python DQ semantics: missing-implausible-zero, date-sanity, RTR check. Tier-1 testable; the canonical spec. |
@@ -61,6 +61,33 @@ Decisions signed 2026-06-02 (C-018); **pure modules built + tier-1 green 2026-06
 | `schemas.gold` (+S4) | `src/common/schemas/gold.py` | `merchant_activation_schema()`, `book_health_schema()` (tall point-in-time). |
 
 Reuses existing `Thresholds` + the clock business-day calendar (no duplicate numbers — Rule 3) + the S3 rung output / event log (extended with S4 builders `state_transition_event`/`play_fired_event` + 4 nullable cols). Consumed by `transform/gold_activation.py` + `transform/gold_book_health.py` (**Spark drivers — built; tier-2 PASSED + promoted to PROD `gold` 2026-06-02 `failures: []`**) writing point-in-time `gold.merchant_activation` (+`_current`), the `gold.daily_queue` view (sliding-first `queue_rank`), and the `gold.book_health` family (+ 3 `_current` views); `field_maps.SF_WRITEBACK_REFERENCE` documents the FU-401 Salesforce write-back (dedicated `MRI__*` fields).
+
+## Built (Sprint 5 — Offer Engine integration: structure + suitability + offer types, §6/5.7)
+
+D-503…D-508 signed 2026-06-02; **pure modules built + tier-1 green (270 tier-1).** REUSES the existing `mca_funders` routing engine — NO routing/criteria rebuild (CLAUDE.md §6), NO comms (S8), no writes to `mca_funders`. The cloud reuse step (`transform/gold_offers.py`) is **blocked on D-501** (the spike showed reuse-by-id is non-viable — 0 overlap). Pure / Spark-free-at-import.
+
+| Component | Path | Contract / purpose |
+|---|---|---|
+| `offer.structure` | `src/common/offer/structure.py` | D-506 renewal-vs-buyout: `double_dip_cost` (balance×(factor−1)), `recommend_structure` (wait-and-paydown / buyout / renewal), `structure_evaluation`. Reuses the 50% paydown threshold. |
+| `offer.suitability` | `src/common/offer/suitability.py` | The gate (engine proposes / advisory disposes): `suitability_verdict` (surface / suppress double-dip / wait), `is_suitable`, `compliance_gate_hook` (S8 interface only, D-508). |
+| `offer.offer_types` | `src/common/offer/offer_types.py` | D-504 `candidate_offer_types` from clock/rung/state (renewal / buyout / larger-advance / none-yet). |
+| `offer.profile` | `src/common/offer/profile.py` | D-503 `build_funder_profile`: MRI gold → the engine's `v_funder_input` shape + honest missing-field flags; `tib_months`. |
+| `schemas.gold` (+S5) | `src/common/schemas/gold.py` | `merchant_offers_schema()` (point-in-time). |
+
+Reuses existing `Thresholds` + the S2/S3/S4 outputs (no duplicate numbers — Rule 3). `constants.FunderCatalog` holds the `mca_funders` fq names (read-only reuse target). Consumed by `transform/gold_offers.py` (**build pending — gated on D-501**) writing point-in-time `gold.merchant_offers` (+`_current`); `matched_funders` is sourced by REUSING the routing engine, never rebuilt.
+
+## Built (Sprint 6 — Prediction feature/label derivation, §6/11.2)
+
+D-601…D-609 signed 2026-06-02 (C-020); **pure modules built + tier-1 green (284 tier-1).** First ML sprint — the MODELS (PyMC-Marketing BG/NBD+Gamma-Gamma+CLV; lifelines Cox+KM) are ADOPTED and fit on Databricks (`transform/gold_predictions.py`, **build gated on D-602**); MRI owns only feature/label derivation + orchestration (CLAUDE.md §4). Pure / Spark+ML-free at import. Distress stays signal-driven (S3).
+
+| Component | Path | Contract / purpose |
+|---|---|---|
+| `prediction.rfm` | `src/common/prediction/rfm.py` | D-601 `rfm_features`: frequency (deal_count−1) / recency / T / monetary for BG/NBD + Gamma-Gamma. |
+| `prediction.survival` | `src/common/prediction/survival.py` | D-607 `inter_advance_intervals` / `censored_duration` / `survival_rows`: observed intervals (event=1) + censored tail (event=0) for lifelines Cox/KM — not-yet-renewed = censored, never dropped. |
+| `prediction.confidence` | `src/common/prediction/confidence.py` | D-603 `prediction_confidence` (posterior-width else history), `is_insufficient_history` (thin merchants → prior + wide confidence). |
+| `schemas.gold` (+S6) | `src/common/schemas/gold.py` | `merchant_predictions_schema()` (point-in-time). |
+
+Reuses existing `Thresholds` + the deal history / event log (no duplicate numbers — Rule 3). `constants` adds the CLV horizon/discount + `INSUFFICIENT_HISTORY_MIN_EVENTS` + `COX_COVARIATES` (calibration home). Consumed by `transform/gold_predictions.py` (**build pending — gated**) writing point-in-time `gold.merchant_predictions` (+`_current`) + `prediction` events, MLflow-versioned (`model_version`).
 
 ## Principles
 

@@ -380,6 +380,79 @@ def book_health_columns() -> list[str]:
     return [fs.silver_col for fs in BOOK_HEALTH_MAP]
 
 
+# =============================================================================
+# GOLD layer (S5) — Offer Engine outputs (Build Plan §6 / Framework §5.7). POINT-IN-TIME
+# `merchant_offers` keyed (merchant_id, offer_run_date), append-only + `_current` view
+# (mirrors S2/S3/S4). Source-label convention:
+#   "offer:<...>"        computed by common/offer (offer types, structure, suitability)
+#   "funder:reuse"       from REUSING the existing routing engine (mca_funders) — NOT rebuilt
+#   "run:today"          the proactive-scan run date (the tap-early cadence marker)
+# NO writes to mca_funders; NO SF stored balances; NO offer SENT (proposes only — S8 delivers).
+# =============================================================================
+
+MERCHANT_OFFERS_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "offer:from gold.merchants", Verdict.HAVE, "PK part (with offer_run_date)"),
+    FieldSpec("offer_run_date", "date", "run:today", Verdict.DERIVE, "proactive-scan date; PK part; = offer_refresh_date"),
+    FieldSpec("eligible_offer_types", "string", "offer:D-504 candidates ∩ funder match", Verdict.DERIVE, "comma-joined: renewal / buyout / larger-advance / none-yet"),
+    FieldSpec("matched_funders", "string", "funder:reuse routing_program_evaluations", Verdict.REUSE, "comma-joined funders whose box the merchant fits (from the existing engine); empty when none"),
+    FieldSpec("max_sustainable_advance", "decimal", "offer:capacity (revenue-dependent)", Verdict.DERIVE, "D-505: null in v1 (no revenue feed, FU-301) → max_sustainable_advance_is_missing; never a fabricated ceiling"),
+    FieldSpec("best_offer_summary", "string", "offer:plain-language best credible option", Verdict.DERIVE, "drafted from the matched option + suitability; honest, no invented numbers"),
+    FieldSpec("recommended_structure", "enum", "offer:D-506 renewal-vs-buyout", Verdict.DERIVE, "renewal / buyout / wait-and-paydown (the math decides)"),
+    FieldSpec("double_dip_cost", "decimal", "offer:est_current_balance × (factor−1)", Verdict.DERIVE, "honest rollover cost surfaced for the structure decision; null when inputs missing"),
+    FieldSpec("suitability_verdict", "enum", "offer:D-506 gate", Verdict.DERIVE, "surface / suppress / wait — engine proposes, advisory disposes"),
+    FieldSpec("offer_refresh_date", "date", "run:today", Verdict.DERIVE, "tap-early cadence marker (= offer_run_date)"),
+)
+
+GOLD_MERCHANT_OFFERS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("max_sustainable_advance_is_missing", "bool"),  # revenue-dependent; null+flag in v1 (FU-301)
+    ("offer_profile_unmatched", "bool"),  # merchant did not join to the funder engine (id gap) → none-yet
+)
+
+
+def merchant_offers_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_OFFERS_MAP] + [
+        c for c, _ in GOLD_MERCHANT_OFFERS_DQ_COLUMNS
+    ]
+
+
+# =============================================================================
+# GOLD layer (S6) — Prediction outputs (Build Plan §6 / Framework §11.2). POINT-IN-TIME
+# `merchant_predictions` keyed (merchant_id, prediction_run_date), append-only + `_current`
+# (mirrors S2–S5). Source-label convention:
+#   "predict:rfm"        deterministic RFM features (common/prediction; tier-1 tested)
+#   "predict:BTYD"       PyMC-Marketing BG/NBD + Gamma-Gamma + CLV output (model)
+#   "predict:survival"   lifelines Cox PH output (model)
+#   "run:today"          the inference run date (point-in-time stamp)
+# Models ADOPTED (not hand-built); MLflow-versioned (model_version). Distress is NOT model-
+# driven (S3 owns it). NO SF stored balances.
+# =============================================================================
+
+MERCHANT_PREDICTIONS_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "predict:from gold.merchants", Verdict.HAVE, "PK part (with prediction_run_date)"),
+    FieldSpec("prediction_run_date", "date", "run:today", Verdict.DERIVE, "inference run date; PK part (mirrors clock_run_date)"),
+    FieldSpec("rfm_recency", "int", "predict:rfm last−first advance (days)", Verdict.DERIVE, "BG/NBD recency"),
+    FieldSpec("rfm_frequency", "int", "predict:rfm deal_count−1", Verdict.DERIVE, "BG/NBD repeat-advance count"),
+    FieldSpec("rfm_T", "int", "predict:rfm today−first advance (days)", Verdict.DERIVE, "BG/NBD observation-window age"),
+    FieldSpec("rfm_monetary", "decimal", "predict:rfm avg funded_amount", Verdict.DERIVE, "Gamma-Gamma monetary value"),
+    FieldSpec("p_alive", "decimal", "predict:BTYD BG/NBD", Verdict.DERIVE, "[0,1] probability still active"),
+    FieldSpec("p_defection", "decimal", "predict:BTYD 1−p_alive (adj.)", Verdict.DERIVE, "[0,1] take-next-capital-elsewhere risk; win-back trigger"),
+    FieldSpec("predicted_next_event_date", "date", "predict:survival Cox PH", Verdict.DERIVE, "predicted next capital-event timing; queue: in-market"),
+    FieldSpec("predicted_clv", "decimal", "predict:BTYD CLV (NPV)", Verdict.DERIVE, "net-present lifetime value over the configured horizon/discount"),
+    FieldSpec("prediction_confidence", "decimal", "predict:posterior width / history", Verdict.DERIVE, "[0,1] uncertainty band — governs soft vs firm advice framing; NOT accuracy"),
+    FieldSpec("model_version", "string", "predict:MLflow", Verdict.DERIVE, "ruleset/model version — reproducibility & audit (Event Log contract)"),
+)
+
+GOLD_MERCHANT_PREDICTIONS_DQ_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("insufficient_history", "bool"),  # repeat events < INSUFFICIENT_HISTORY_MIN_EVENTS → prior-only + wide confidence
+)
+
+
+def merchant_predictions_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_PREDICTIONS_MAP] + [
+        c for c, _ in GOLD_MERCHANT_PREDICTIONS_DQ_COLUMNS
+    ]
+
+
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
 

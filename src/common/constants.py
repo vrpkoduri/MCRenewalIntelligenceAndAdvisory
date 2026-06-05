@@ -172,7 +172,11 @@ class EventType:
     TRANSITION = "transition"  # emitted when lifecycle_state or rung changed run-over-run (S3)
     STATE_TRANSITION = "state_transition"  # current_state changed run-over-run (S4 activation)
     PLAY_FIRED = "play_fired"  # a named play assigned/changed for a merchant (S4 activation)
-    ALL = frozenset({CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED})
+    OFFER_COMPUTED = "offer_computed"  # a proactive offer scan produced/changed options (S5)
+    PREDICTION = "prediction"  # a model inference produced/updated predictions for a merchant (S6)
+    ALL = frozenset(
+        {CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED, OFFER_COMPUTED, PREDICTION}
+    )
 
 
 # rapid_reup_flag (D-302) — owned in common/rung (nothing computes it upstream today).
@@ -259,6 +263,92 @@ class BookHealthView:
     RENEWAL_PERFORMANCE = "renewal_performance"
     LEADING_INDICATORS = "leading_indicators"
     ALL = frozenset({BOOK_HEALTH, RENEWAL_PERFORMANCE, LEADING_INDICATORS})
+
+
+# --- Offer Engine (Build Plan §6, Framework §5.7, S5 / proactive reuse) -----------
+# Reuses the EXISTING funder-criteria dataset + routing engine (the `mca_funders` catalog).
+# S5 builds the integration layer only: an MRI merchant profile -> reuse the engine ->
+# offer outputs + the renewal-vs-buyout suitability gate. NO routing/criteria rebuild
+# (CLAUDE.md §6). NO outbound delivery / comms (S8). Pure enums (no Spark).
+
+
+class OfferType:
+    """eligible_offer_types (Data Contract / D-504) — what the merchant could be offered."""
+
+    RENEWAL = "renewal"  # in-market, single-position disciplined: renew the position
+    BUYOUT = "buyout"  # consolidate existing position(s) into one cleaner facility
+    LARGER_ADVANCE = "larger-advance"  # qualifies for a bigger advance
+    NONE_YET = "none-yet"  # not eligible / gated / no funder match — the honest default
+    ALL = frozenset({RENEWAL, BUYOUT, LARGER_ADVANCE, NONE_YET})
+
+
+class OfferStructure:
+    """The renewal-vs-buyout structure decision (Framework §5.7 / D-506). The math decides,
+    the merchant's interest is the tiebreaker — buyout is NOT assumed superior."""
+
+    RENEWAL = "renewal"  # single position, healthy paydown -> renew
+    BUYOUT = "buyout"  # multiple positions -> a consolidating buyout is the kinder structure
+    WAIT_AND_PAYDOWN = "wait-and-paydown"  # barely-paid position -> rolling it is the expensive
+    # double-dip; the honest answer is "wait and pay down first" (neither structure helps yet)
+    ALL = frozenset({RENEWAL, BUYOUT, WAIT_AND_PAYDOWN})
+
+
+class SuitabilityVerdict:
+    """The suitability gate (D-506): the engine PROPOSES, the advisory layer DISPOSES. A
+    matchable offer (e.g. a buyout) may still be unsuitable (a double-dip) and must not be
+    surfaced. Full compliance gate is S8 (D-508 — interface only here)."""
+
+    SURFACE = "surface"  # suitable — may be presented (still subject to the S8 compliance gate)
+    SUPPRESS = "suppress"  # matchable but unsuitable (e.g. a double-dip buyout) — do not pitch
+    WAIT = "wait"  # advise wait-and-pay-down instead of any new advance
+    ALL = frozenset({SURFACE, SUPPRESS, WAIT})
+
+
+class FunderCatalog:
+    """The EXISTING funder-criteria dataset + routing engine to REUSE (read-only / invoke —
+    never rebuilt, never written by MRI). Spike (2026-06-02): the routing OUTPUTS cover only
+    the new-deal/submission population (121 merchants) with ZERO id-overlap to the MRI funded
+    book, so reusing existing evaluations is non-viable — the engine must be run against MRI
+    profiles (mechanism = D-501). The criteria box is small + structured (12 funders / 17
+    active programs / 94 versions)."""
+
+    CATALOG = "mca_funders"
+    # Input contract the routing engine consumes (the merchant profile shape MRI must build).
+    FUNDER_INPUT_VIEW = "gold.v_funder_input"
+    # Routing outputs (per-program verdicts + per-merchant decisions).
+    ROUTING_EVALUATIONS = "gold.routing_program_evaluations"
+    ROUTING_DECISIONS = "gold.routing_decisions"
+    # Structured criteria boxes (the funder accept rules; reused as-is).
+    FUNDER_PROGRAMS = "silver.funder_programs"
+    FUNDER_PROGRAM_VERSIONS = "silver.funder_program_versions"
+    FUNDER_INDUSTRIES = "silver.funder_industries"
+    FUNDER_STATES = "silver.funder_states"
+    FUNDER_OPERATIONS = "silver.funder_operations"
+    FUNDERS = "silver.funders"
+
+
+# --- Prediction Models (Build Plan §6, Framework §11.2, S6 / C-020) ---------------
+# First ML sprint: ADOPT PyMC-Marketing (BG/NBD + Gamma-Gamma + CLV) + lifelines (Cox PH +
+# KM), not hand-built. The RFM/survival feature derivation is pure (tier-1 testable here);
+# the model fitting runs on Databricks. Calibration config lives here (one place, Rule 3).
+
+# A merchant needs at least this many REPEAT advances (frequency) for an individual
+# data-driven fit; below it -> `insufficient_history` (book-level prior + wide confidence,
+# Cox-censored). Spike (2026-06-02): 1,329/2,125 single-deal merchants land here. (D-603)
+INSUFFICIENT_HISTORY_MIN_EVENTS = 1
+
+# CLV horizon + discount rate for PyMC-Marketing CLV (NPV). Calibratable. (D-606)
+CLV_HORIZON_MONTHS = 12
+CLV_DISCOUNT_RATE_ANNUAL = 0.12
+
+# lifelines Cox covariates for the "time to next advance" model (D-607). `burden_ratio` is
+# intentionally EXCLUDED — null book-wide in v1 (no revenue feed, FU-301); folds in later.
+COX_COVARIATES = (
+    "factor_trend",
+    "active_position_cnt",
+    "payment_health",
+    "industry_vertical",
+)
 
 
 class Verdict:
@@ -348,6 +438,15 @@ class GoldTable:
     MERCHANT_ACTIVATION = "merchant_activation"
     MERCHANT_ACTIVATION_CURRENT = "merchant_activation_current"
     DAILY_QUEUE = "daily_queue"
+    # S5 Offer Engine (Build Plan §6 / Framework §5.7) — point-in-time `merchant_offers`
+    # (+ `_current` view), reusing the existing routing engine. NO writes to mca_funders.
+    MERCHANT_OFFERS = "merchant_offers"
+    MERCHANT_OFFERS_CURRENT = "merchant_offers_current"
+    # S6 Prediction (Build Plan §6 / Framework §11.2) — point-in-time `merchant_predictions`
+    # (+ `_current` view): BTYD (p_alive/CLV) + survival (next-event) + confidence. Batch
+    # inference (D-605); models adopted (PyMC-Marketing + lifelines), MLflow-versioned.
+    MERCHANT_PREDICTIONS = "merchant_predictions"
+    MERCHANT_PREDICTIONS_CURRENT = "merchant_predictions_current"
     BOOK_HEALTH = "book_health"
     BOOK_HEALTH_CURRENT = "book_health_current"
     RENEWAL_PERFORMANCE_CURRENT = "renewal_performance_current"
