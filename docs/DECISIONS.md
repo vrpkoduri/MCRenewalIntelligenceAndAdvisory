@@ -114,6 +114,19 @@ Append-only record of decisions you've signed off on, and open decisions awaitin
 
 **D-601…D-609 approved 2026-06-02 — see C-020.** Data-readiness spike done (796 repeat / 1,329 single-deal). **D-602 adjusted at build time:** v1 BG/NBD+Gamma-Gamma+CLV ships on the lightweight **`lifetimes`** lib (pure numpy/scipy — PyMC-Marketing's native PyTensor stack crashed the cluster driver across 4 attempts; **FU-602** tracks the PyMC Bayesian upgrade once its env is sorted interactively) + **lifelines** Cox/KM, on a 14.3 LTS ML single-node cluster. **Tier-2 PASSED on `gold_test` (`failures: []`):** 2,125 merchants predicted (coverage/keys/bounds/honesty green), insufficient_history 1,329, CLV non-null 796, Cox fitted; calibration note on the p_alive-by-lifecycle pattern (refine with FU-602/FU-301). **PROD `gold` gated** (Rule 5). **Follow-ups: FU-601 RESOLVED in code 2026-06-02** (centralized `DealType.REPEAT_TYPES`={Renewal,Buyout,Stack,Add-On}=all non-New; fixed S1 `gold_deals` renewal chain + S3 `gold_rung` + S4 `gold_activation` `has_renewal`; +1 tier-1 → 285; transform re-run to propagate to live tables is gated); **FU-602** (PyMC-Marketing Bayesian upgrade + posterior-width confidence).
 
+**Sprint 7 (Agentic Extraction — Statement Analyst + Data Steward) — sign-off needed before build** (detail in [SPRINT_7_PLAN](sprints/SPRINT_7_PLAN.md) §8). First agentic sprint (Framework §5.9): agents **extract**, the spine still **computes**; agents are grounded + logged + call deterministic tools + never recompute the spine.
+
+| ID | Opened | Question | Recommendation |
+|---|---|---|---|
+| D-701 | 2026-06-05 | **LLM / agent platform.** | Databricks-native: Foundation Model APIs (Claude/Llama endpoint) + Mosaic AI Agent Framework (governance/lineage/audit); batch; LLM spend gated. Confirm platform + model + cost. |
+| D-702 | 2026-06-05 | **Bank-statement source + ingestion** (NOT ingested in S0). | Confirm PDFs live in SF ContentVersion/Attachments; stand up a read-only ingestion path to UC; spike availability/volume/format. **Gates the Statement Analyst (Phase 2).** |
+| D-703 | 2026-06-05 | **Phasing.** | **Data Steward first** (self-contained on existing `silver.deals.notes`; resolves `default_subtype`, validates vs Starr; no OCR/PDF infra); **Statement Analyst second** (after D-702 + a labeled sample). |
+| D-704 | 2026-06-05 | **Extraction output shape.** | Separate point-in-time `gold.merchant_extraction` (+`_current`) with source_ref/confidence/model_version/review_status; the spine consumes it as optional enrichment via the normal re-run — the agent never writes spine tables. |
+| D-705 | 2026-06-05 | **Guardrails / grounding / human-review.** | Every extraction grounded (source_ref + citation + confidence); `< AGENT_CONFIDENCE_REVIEW_MIN` → human-review queue, never auto-applied; agents call deterministic tools for all counting/classification; full event-log audit incl. model_version. Confirm the threshold. |
+| D-706 | 2026-06-05 | **Accuracy bar + labeled sample.** | Hand-label a sample (the four merchants + N more) for default sub-type + statement positions; "sane + improving" acceptance (sub-type accuracy ≥ X%; positions within ±1), calibrated on the first sample. Confirm the approach. |
+
+**Awaiting sign-off.** No S7 code until D-701…D-706 are decided (Rule 1/5). Agents **extract, never compute the spine** (Framework §5.9); LLM spend + statement ingestion + the agent schedule are additionally approval-gated (Rule 5). **Phase 1 (Data Steward) is buildable now** on existing Notes; **Phase 2 (Statement Analyst)** is gated on D-702 (statement access) + D-706 (labeled sample).
+
 ## Resolved (was open)
 
 | ID | Opened | Question | Resolution |
