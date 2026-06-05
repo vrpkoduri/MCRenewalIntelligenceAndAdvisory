@@ -67,7 +67,7 @@ databricks api post /api/2.0/lakeview/dashboards/<dashboard_id>/published --json
 # To update an existing dashboard: PATCH /api/2.0/lakeview/dashboards/<id> with a new serialized_dashboard, then re-publish.
 ```
 
-- **Deployed 2026-06-02:** dashboard_id `01f1608a82e11a65b7e2ffb9968ca0cc` ("Morgan Cash MRI — Merchant Intelligence"), published on the Starter Warehouse. Opening it starts the warehouse (auto-stops after idle).
+- **Deployed 2026-06-02:** dashboard_id `01f160f949351871b77829f9bf12c942` ("Morgan Cash MRI — Merchant Intelligence"), published on the Starter Warehouse. Opening it starts the warehouse (auto-stops after idle).
 - The spec (`resources/mri_dashboard.lvdash.json`) is the source of truth; edit the builder + redeploy.
 
 ## Unity Catalog quick reference

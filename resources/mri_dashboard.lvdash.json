@@ -15,6 +15,27 @@
       ]
     },
     {
+      "name": "ds_rung_dist",
+      "displayName": "Rung distribution",
+      "queryLines": [
+        "SELECT coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, count(*) AS merchants FROM mca_mri.gold.merchant_rung_current GROUP BY 1 ORDER BY 1"
+      ]
+    },
+    {
+      "name": "ds_lifecycle_dist",
+      "displayName": "Lifecycle distribution",
+      "queryLines": [
+        "SELECT lifecycle_state, count(*) AS merchants FROM mca_mri.gold.merchant_rung_current GROUP BY 1 ORDER BY 2 DESC"
+      ]
+    },
+    {
+      "name": "ds_play_dist",
+      "displayName": "Play distribution",
+      "queryLines": [
+        "SELECT active_play, count(*) AS merchants FROM mca_mri.gold.merchant_activation_current GROUP BY 1 ORDER BY 2 DESC"
+      ]
+    },
+    {
       "name": "ds_bookhealth",
       "displayName": "Book Health metrics",
       "queryLines": [
@@ -308,48 +329,44 @@
         },
         {
           "widget": {
-            "name": "b_rung",
+            "name": "t_rung",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_rung",
+                  "datasetName": "ds_rung_dist",
                   "fields": [
                     {
                       "name": "rung_label",
                       "expression": "`rung_label`"
                     },
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "merchants",
+                      "expression": "`merchants`"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 3,
+              "version": 1,
               "frame": {
                 "showTitle": true,
                 "title": "Rung distribution"
               },
-              "widgetType": "bar",
+              "widgetType": "table",
               "encodings": {
-                "x": {
-                  "fieldName": "rung_label",
-                  "scale": {
-                    "type": "categorical"
+                "columns": [
+                  {
+                    "fieldName": "rung_label",
+                    "displayName": "rung_label"
                   },
-                  "displayName": "Rung distribution"
-                },
-                "y": {
-                  "fieldName": "count(merchant_id)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Merchants"
-                }
+                  {
+                    "fieldName": "merchants",
+                    "displayName": "merchants"
+                  }
+                ]
               }
             }
           },
@@ -362,48 +379,44 @@
         },
         {
           "widget": {
-            "name": "b_lifecycle",
+            "name": "t_lifecycle",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_rung",
+                  "datasetName": "ds_lifecycle_dist",
                   "fields": [
                     {
                       "name": "lifecycle_state",
                       "expression": "`lifecycle_state`"
                     },
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "merchants",
+                      "expression": "`merchants`"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 3,
+              "version": 1,
               "frame": {
                 "showTitle": true,
-                "title": "Lifecycle"
+                "title": "Lifecycle distribution"
               },
-              "widgetType": "bar",
+              "widgetType": "table",
               "encodings": {
-                "x": {
-                  "fieldName": "lifecycle_state",
-                  "scale": {
-                    "type": "categorical"
+                "columns": [
+                  {
+                    "fieldName": "lifecycle_state",
+                    "displayName": "lifecycle_state"
                   },
-                  "displayName": "Lifecycle"
-                },
-                "y": {
-                  "fieldName": "count(merchant_id)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Merchants"
-                }
+                  {
+                    "fieldName": "merchants",
+                    "displayName": "merchants"
+                  }
+                ]
               }
             }
           },
@@ -416,48 +429,44 @@
         },
         {
           "widget": {
-            "name": "b_play",
+            "name": "t_play",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_activation",
+                  "datasetName": "ds_play_dist",
                   "fields": [
                     {
                       "name": "active_play",
                       "expression": "`active_play`"
                     },
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "merchants",
+                      "expression": "`merchants`"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 3,
+              "version": 1,
               "frame": {
                 "showTitle": true,
-                "title": "Active play"
+                "title": "Active play distribution"
               },
-              "widgetType": "bar",
+              "widgetType": "table",
               "encodings": {
-                "x": {
-                  "fieldName": "active_play",
-                  "scale": {
-                    "type": "categorical"
+                "columns": [
+                  {
+                    "fieldName": "active_play",
+                    "displayName": "active_play"
                   },
-                  "displayName": "Active play"
-                },
-                "y": {
-                  "fieldName": "count(merchant_id)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Merchants"
-                }
+                  {
+                    "fieldName": "merchants",
+                    "displayName": "merchants"
+                  }
+                ]
               }
             }
           },
