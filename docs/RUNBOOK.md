@@ -55,6 +55,21 @@ databricks workspace delete "$STAGE" --recursive   # clean up staging
 - **PROD `gold` write requires `schema=gold` AND `allow_prod=True`** — gated on explicit approval (Rule 5). Done 2026-06-02.
 - `confidence` is a deterministic rules score (D-306), NOT an ML probability (ML is S6).
 
+## MRI dashboard (AI/BI Lakeview, C-021)
+
+Read-only renderer over PROD `mca_mri.gold` `_current` views — Book Health scoreboard, Daily Queue, Merchant 360 (incl. predictions). Authored as code; **no writes, no Salesforce** (reps-in-SF is the deferred FU-401).
+
+```bash
+python resources/build_mri_dashboard.py     # regenerates resources/mri_dashboard.lvdash.json + .dashboard_body.json
+# Create (once) + publish on the Starter Warehouse:
+databricks api post /api/2.0/lakeview/dashboards --json @.dashboard_body.json          # -> dashboard_id
+databricks api post /api/2.0/lakeview/dashboards/<dashboard_id>/published --json '{"warehouse_id":"526a06bbae2df35b"}'
+# To update an existing dashboard: PATCH /api/2.0/lakeview/dashboards/<id> with a new serialized_dashboard, then re-publish.
+```
+
+- **Deployed 2026-06-02:** dashboard_id `01f1608a82e11a65b7e2ffb9968ca0cc` ("Morgan Cash MRI — Merchant Intelligence"), published on the Starter Warehouse. Opening it starts the warehouse (auto-stops after idle).
+- The spec (`resources/mri_dashboard.lvdash.json`) is the source of truth; edit the builder + redeploy.
+
 ## Unity Catalog quick reference
 
 ```bash
