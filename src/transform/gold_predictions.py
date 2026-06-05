@@ -1,7 +1,9 @@
 """Gold -> Gold: Prediction Models (Build Plan §6, Framework §11.2, S6).
 
-Fits the ADOPTED toolkit (PyMC-Marketing BG/NBD + Gamma-Gamma + CLV; lifelines Cox PH + KM)
-on the real renewal history and writes the Merchant-Gold prediction outputs. Reads S1-S4 gold
+Fits the ADOPTED toolkit on the real renewal history and writes the Merchant-Gold prediction
+outputs. v1 BG/NBD + Gamma-Gamma + CLV via `lifetimes` (pure numpy/scipy MLE — no PyTensor;
+PyMC-Marketing's Bayesian version is the documented upgrade once its cluster env is sorted,
+FU-602), survival via lifelines (Cox PH + KM). Reads S1-S4 gold
 + the event log; NEVER recomputes the spine (CLAUDE.md §2.1); distress stays signal-driven
 (S3 owns it). NO SF stored balances.
 
@@ -100,56 +102,56 @@ def _assemble_features(spark: SparkSession, catalog: str, schema: str, run_date:
 
 
 def _fit_btyd(feat, run_date: date):
-    """BG/NBD (p_alive, expected purchases) + Gamma-Gamma (spend) -> p_alive, p_defection,
-    predicted_clv (manual NPV over the horizon — robust to CLV-helper API drift)."""
+    """BG/NBD (p_alive) + Gamma-Gamma (CLV) via `lifetimes` (D-602 v1 — pure numpy/scipy MLE,
+    no PyTensor; PyMC-Marketing is the documented upgrade once its env is sorted, FU-602).
+
+    Time unit = DAYS (lifetimes' `freq='D'` convention); the CLV horizon is in months.
+    """
     import numpy as np
     import pandas as pd
-    from pymc_marketing.clv import BetaGeoModel, GammaGammaModel
+    from lifetimes import BetaGeoFitter, GammaGammaFitter
 
-    # BG/NBD needs recency <= T and T > 0; otherwise the merchant is prior-only.
-    valid = feat[(feat["T_m"] > 0) & (feat["recency_m"] <= feat["T_m"])].copy()
-    bg_data = pd.DataFrame({
-        "customer_id": valid["merchant_id"],
-        "frequency": valid["frequency"].astype(float),
-        "recency": valid["recency_m"].astype(float),
-        "T": valid["T_m"].astype(float),
-    })
-    bg = BetaGeoModel(data=bg_data)
-    bg.fit(fit_method="map")
+    # BG/NBD needs recency <= T and T > 0; otherwise the merchant is prior-only (insufficient).
+    valid = feat[(feat["T_days"].fillna(0) > 0) & (feat["recency_days"].fillna(0) <= feat["T_days"].fillna(0))].copy()
+    freq = valid["frequency"].astype(float).values
+    rec = valid["recency_days"].astype(float).values
+    T = valid["T_days"].astype(float).values
 
-    p_alive = np.asarray(bg.expected_probability_alive(data=bg_data)).reshape(-1)
-    horizon = float(C.CLV_HORIZON_MONTHS)
-    exp_purch = np.asarray(
-        bg.expected_purchases(data=bg_data, future_t=horizon)
-    ).reshape(-1)
+    bgf = BetaGeoFitter(penalizer_coef=0.01)
+    bgf.fit(freq, rec, T)
+    p_alive = np.asarray(bgf.conditional_probability_alive(freq, rec, T)).reshape(-1)
 
     out = pd.DataFrame({
         "merchant_id": valid["merchant_id"].values,
         "p_alive": p_alive,
-        "exp_purchases": exp_purch,
+        "p_defection": 1.0 - p_alive,
     })
 
-    # Gamma-Gamma spend for repeat buyers (frequency > 0 & monetary > 0).
-    gg_src = valid[(valid["frequency"] > 0) & (valid["monetary"].fillna(0) > 0)]
-    if len(gg_src) > 0:
-        gg_data = pd.DataFrame({
-            "customer_id": gg_src["merchant_id"],
-            "frequency": gg_src["frequency"].astype(float),
-            "monetary_value": gg_src["monetary"].astype(float),
-        })
-        gg = GammaGammaModel(data=gg_data)
-        gg.fit(fit_method="map")
-        spend = np.asarray(gg.expected_customer_spend(data=gg_data)).reshape(-1)
-        spend_df = pd.DataFrame({"merchant_id": gg_src["merchant_id"].values, "spend": spend})
-        out = out.merge(spend_df, on="merchant_id", how="left")
-    else:
-        out["spend"] = np.nan
-
-    # Manual NPV CLV over the horizon (monthly discounting) — robust + auditable.
+    # Gamma-Gamma CLV for repeat buyers (frequency > 0 & monetary > 0); built-in NPV over the
+    # horizon. Single-deal / no-monetary merchants get null CLV (insufficient — never faked).
     monthly_rate = (1.0 + float(C.CLV_DISCOUNT_RATE_ANNUAL)) ** (1.0 / 12.0) - 1.0
-    discount = 1.0 / ((1.0 + monthly_rate) ** (horizon / 2.0))  # mid-horizon discount factor
-    out["predicted_clv"] = out["exp_purchases"] * out["spend"] * discount
-    out["p_defection"] = 1.0 - out["p_alive"]
+    gg_src = valid[(valid["frequency"] > 0) & (valid["monetary"].fillna(0) > 0)].copy()
+    if len(gg_src) > 0:
+        # lifetimes.customer_lifetime_value reads `frequency.index`, so pass pandas Series
+        # sharing one positional index (NOT numpy arrays).
+        gg_src = gg_src.reset_index(drop=True)
+        freq_s = gg_src["frequency"].astype(float)
+        rec_s = gg_src["recency_days"].astype(float)
+        T_s = gg_src["T_days"].astype(float)
+        mon_s = gg_src["monetary"].astype(float)
+        ggf = GammaGammaFitter(penalizer_coef=0.01)
+        ggf.fit(freq_s, mon_s)
+        clv = ggf.customer_lifetime_value(
+            bgf, freq_s, rec_s, T_s, mon_s,
+            time=int(C.CLV_HORIZON_MONTHS),  # months
+            discount_rate=monthly_rate,
+            freq="D",
+        )
+        clv_df = pd.DataFrame({"merchant_id": gg_src["merchant_id"].values, "predicted_clv": np.asarray(clv).reshape(-1)})
+        out = out.merge(clv_df, on="merchant_id", how="left")
+    else:
+        out["predicted_clv"] = np.nan
+
     return out[["merchant_id", "p_alive", "p_defection", "predicted_clv"]]
 
 

@@ -1,18 +1,16 @@
 # Databricks notebook source
-# Tier-2 driver (S6): fit the ADOPTED models (PyMC-Marketing BG/NBD + Gamma-Gamma + CLV;
+# Tier-2 driver (S6): fit the ADOPTED models (v1: `lifetimes` BG/NBD + Gamma-Gamma + CLV;
 # lifelines Cox PH + KM) on the real renewal history, batch-infer, write
 # gold.merchant_predictions (+`_current`) + `prediction` events, log an MLflow run, then run
 # the reconciliation / sanity assertions (Build Plan §6, Framework §11.2). Parameterized:
 # defaults to gold_test; prod `gold` requires schema=gold AND allow_prod=true (Rule 5).
 #
-# REQUIRES a Databricks ML runtime. Run as a one-time job on a single-node ML cluster.
-# Expects `src/` and `recon_predictions.py` staged as Workspace FILES under STAGE.
-
-# COMMAND ----------
-# MAGIC %pip install "pymc-marketing==0.13.1" "lifelines==0.30.0" --quiet
-
-# COMMAND ----------
-dbutils.library.restartPython()  # noqa: F821
+# REQUIRES a Databricks ML runtime (14.3 LTS ML — Python 3.10 / numpy 1.x, where the
+# unmaintained `lifetimes` installs cleanly). `lifetimes` + `lifelines` are installed as
+# CLUSTER-LEVEL PyPI libraries on the job spec (pre-kernel) — NOT notebook-scoped %pip +
+# restartPython (which crashed the kernel, FU-602). `lifetimes` is pure numpy/scipy (no
+# PyTensor), avoiding the PyMC driver crash. Expects `src/` + `recon_predictions.py` staged
+# as Workspace FILES under STAGE.
 
 # COMMAND ----------
 import json
