@@ -3,11 +3,14 @@
 A READ-ONLY renderer over PROD `mca_mri.gold` `_current` views (Framework §5.4/§5.8 — the
 dashboard is a renderer over the gold table; no writes, no SF). Three pages: Book Health
 scoreboard (management), Daily Queue (floor), Merchant 360 (per-merchant drill incl.
-predictions). Run locally (pure Python, no deps): writes
-  - resources/mri_dashboard.lvdash.json   (the serialized dashboard — the as-code artifact)
-  - .dashboard_body.json                  (the Lakeview create-request body; gitignored/temp)
-then deploy with:
-  databricks api post /api/2.0/lakeview/dashboards --json @.dashboard_body.json
+predictions).
+
+Widget pattern mirrors a known-good workspace dashboard ("Morgan Cash Leads"): datasets
+return GRANULAR rows and the WIDGETS aggregate (COUNT + filters for counters, group-by COUNT
+for bars; tables render raw rows). 12-column grid. queries[].name = "main_query".
+
+Run locally (pure Python): writes resources/mri_dashboard.lvdash.json + .dashboard_body.json,
+then deploy/update via the Lakeview Dashboards API (see RUNBOOK).
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ from __future__ import annotations
 import json
 import os
 
-WAREHOUSE_ID = "526a06bbae2df35b"  # Starter Warehouse (read-only queries)
+WAREHOUSE_ID = "526a06bbae2df35b"
 PARENT_PATH = "/Workspace/Users/venkat@morgancash.com"
 DISPLAY_NAME = "Morgan Cash MRI — Merchant Intelligence"
 G = "mca_mri.gold"
@@ -26,32 +29,18 @@ def _ds(name, display, sql):
 
 
 DATASETS = [
-    _ds("ds_counts", "Rung counts",
-        f"SELECT count(*) AS total_merchants, "
-        f"sum(case when lifecycle_state='active' then 1 else 0 end) AS active_merchants, "
-        f"sum(case when direction_of_travel='sliding' then 1 else 0 end) AS sliding_merchants, "
-        f"sum(case when lifecycle_state='defaulted' then 1 else 0 end) AS defaulted_merchants, "
-        f"sum(case when is_unclassified then 1 else 0 end) AS unclassified_merchants "
-        f"FROM {G}.merchant_rung_current"),
-    _ds("ds_state_counts", "State counts",
-        f"SELECT sum(case when current_state='approaching' then 1 else 0 end) AS approaching, "
-        f"sum(case when current_state='in-market' then 1 else 0 end) AS in_market "
-        f"FROM {G}.merchant_activation_current"),
-    _ds("ds_rung_dist", "Rung distribution",
-        f"SELECT coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, count(*) AS n "
-        f"FROM {G}.merchant_rung_current GROUP BY 1 ORDER BY 1"),
-    _ds("ds_lifecycle_dist", "Lifecycle distribution",
-        f"SELECT lifecycle_state, count(*) AS n FROM {G}.merchant_rung_current GROUP BY 1 ORDER BY 2 DESC"),
-    _ds("ds_play_dist", "Play distribution",
-        f"SELECT active_play, count(*) AS n FROM {G}.merchant_activation_current GROUP BY 1 ORDER BY 2 DESC"),
+    _ds("ds_rung", "Merchant rung (current)",
+        f"SELECT merchant_id, coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, "
+        f"lifecycle_state, direction_of_travel, is_unclassified, confidence FROM {G}.merchant_rung_current"),
+    _ds("ds_activation", "Merchant activation (current)",
+        f"SELECT merchant_id, current_state, active_play FROM {G}.merchant_activation_current"),
     _ds("ds_bookhealth", "Book Health metrics",
         f"SELECT view, metric, dimension_value, value_num, value_pct FROM {G}.book_health "
         f"WHERE report_date=(SELECT max(report_date) FROM {G}.book_health) ORDER BY view, metric, dimension_value"),
     _ds("ds_queue", "Daily queue",
         f"SELECT q.queue_rank, m.business_name, q.merchant_id, q.rung, q.lifecycle_state, "
         f"q.current_state, q.active_play, q.play_sla_due, q.direction_of_travel, q.confidence, "
-        f"q.next_tactical_action "
-        f"FROM {G}.daily_queue q LEFT JOIN {G}.merchants m ON q.merchant_id=m.merchant_id "
+        f"q.next_tactical_action FROM {G}.daily_queue q LEFT JOIN {G}.merchants m ON q.merchant_id=m.merchant_id "
         f"ORDER BY q.queue_rank LIMIT 250"),
     _ds("ds_360", "Merchant 360",
         f"SELECT m.business_name, r.merchant_id, r.rung, r.lifecycle_state, r.confidence, "
@@ -63,62 +52,64 @@ DATASETS = [
         f"LEFT JOIN {G}.merchant_clock_current c ON r.merchant_id=c.merchant_id "
         f"LEFT JOIN {G}.merchant_activation_current a ON r.merchant_id=a.merchant_id "
         f"LEFT JOIN {G}.merchant_predictions_current p ON r.merchant_id=p.merchant_id "
-        f"LEFT JOIN {G}.merchants m ON r.merchant_id=m.merchant_id "
-        f"ORDER BY r.confidence ASC LIMIT 500"),
+        f"LEFT JOIN {G}.merchants m ON r.merchant_id=m.merchant_id ORDER BY r.confidence ASC LIMIT 500"),
 ]
 
 
-def _counter(name, dataset, field, display, x, y):
-    # Lakeview counters need an AGGREGATE expression + disaggregated:false (datasets here are
-    # already single-row aggregates, so SUM is a no-op that returns the value).
-    agg = f"sum_{field}"
+def _counter(name, dataset, display, x, y, filter_expr=None, w=2, h=3):
+    """COUNT(`merchant_id`) over a granular dataset, optionally filtered — the widget
+    aggregates (disaggregated:false), matching the known-good pattern."""
+    q = {"datasetName": dataset,
+         "fields": [{"name": "count(merchant_id)", "expression": "COUNT(`merchant_id`)"}],
+         "disaggregated": False}
+    if filter_expr:
+        q["filters"] = [{"expression": filter_expr}]
     return {
         "widget": {
             "name": name,
-            "queries": [{"name": "main", "query": {
-                "datasetName": dataset,
-                "fields": [{"name": agg, "expression": f"SUM(`{field}`)"}],
-                "disaggregated": False,
-            }}],
-            "spec": {"version": 2, "widgetType": "counter",
-                     "encodings": {"value": {"fieldName": agg, "displayName": display}}},
+            "queries": [{"name": "main_query", "query": q}],
+            "spec": {"version": 2, "frame": {"showTitle": True, "title": display},
+                     "widgetType": "counter",
+                     "encodings": {"value": {"fieldName": "count(merchant_id)", "displayName": display}}},
         },
-        "position": {"x": x, "y": y, "width": 1, "height": 3},
+        "position": {"x": x, "y": y, "width": w, "height": h},
     }
 
 
-def _bar(name, dataset, xf, yf, xlabel, ylabel, x, y, w=2, h=6):
-    # Bar: x = the (raw) category, y = an AGGREGATE (SUM over the pre-grouped dataset),
-    # disaggregated:false — the canonical Lakeview form.
-    yagg = f"sum_{yf}"
+def _bar(name, dataset, group_col, xlabel, ylabel, x, y, w=4, h=6):
+    """Group-by bar: x = the category field, y = COUNT(`merchant_id`); the widget groups
+    (disaggregated:false)."""
     return {
         "widget": {
             "name": name,
-            "queries": [{"name": "main", "query": {
+            "queries": [{"name": "main_query", "query": {
                 "datasetName": dataset,
-                "fields": [{"name": xf, "expression": f"`{xf}`"}, {"name": yagg, "expression": f"SUM(`{yf}`)"}],
+                "fields": [{"name": group_col, "expression": f"`{group_col}`"},
+                           {"name": "count(merchant_id)", "expression": "COUNT(`merchant_id`)"}],
                 "disaggregated": False,
             }}],
-            "spec": {"version": 3, "widgetType": "bar",
+            "spec": {"version": 3, "frame": {"showTitle": True, "title": xlabel},
+                     "widgetType": "bar",
                      "encodings": {
-                         "x": {"fieldName": xf, "scale": {"type": "categorical"}, "displayName": xlabel},
-                         "y": {"fieldName": yagg, "scale": {"type": "quantitative"}, "displayName": ylabel},
+                         "x": {"fieldName": group_col, "scale": {"type": "categorical"}, "displayName": xlabel},
+                         "y": {"fieldName": "count(merchant_id)", "scale": {"type": "quantitative"}, "displayName": ylabel},
                      }},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
     }
 
 
-def _table(name, dataset, cols, x, y, w=6, h=10):
+def _table(name, dataset, cols, title, x, y, w=12, h=12):
     return {
         "widget": {
             "name": name,
-            "queries": [{"name": "main", "query": {
+            "queries": [{"name": "main_query", "query": {
                 "datasetName": dataset,
                 "fields": [{"name": c, "expression": f"`{c}`"} for c in cols],
                 "disaggregated": True,
             }}],
-            "spec": {"version": 1, "widgetType": "table",
+            "spec": {"version": 1, "frame": {"showTitle": True, "title": title},
+                     "widgetType": "table",
                      "encodings": {"columns": [{"fieldName": c, "displayName": c} for c in cols]}},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
@@ -137,25 +128,25 @@ PAGES = [
     {
         "name": "page_book_health", "displayName": "Book Health",
         "layout": [
-            _counter("c_total", "ds_counts", "total_merchants", "Total merchants", 0, 0),
-            _counter("c_active", "ds_counts", "active_merchants", "Active", 1, 0),
-            _counter("c_sliding", "ds_counts", "sliding_merchants", "Sliding", 2, 0),
-            _counter("c_approaching", "ds_state_counts", "approaching", "Approaching", 3, 0),
-            _counter("c_defaulted", "ds_counts", "defaulted_merchants", "Defaulted", 4, 0),
-            _counter("c_unclassified", "ds_counts", "unclassified_merchants", "Unclassified", 5, 0),
-            _bar("b_rung", "ds_rung_dist", "rung_label", "n", "Rung", "Merchants", 0, 3, 2, 6),
-            _bar("b_lifecycle", "ds_lifecycle_dist", "lifecycle_state", "n", "Lifecycle", "Merchants", 2, 3, 2, 6),
-            _bar("b_play", "ds_play_dist", "active_play", "n", "Play", "Merchants", 4, 3, 2, 6),
-            _table("t_bookhealth", "ds_bookhealth", _BH_COLS, 0, 9, 6, 8),
+            _counter("c_total", "ds_rung", "Total merchants", 0, 0),
+            _counter("c_active", "ds_rung", "Active", 2, 0, "`lifecycle_state` IN ('active')"),
+            _counter("c_sliding", "ds_rung", "Sliding", 4, 0, "`direction_of_travel` IN ('sliding')"),
+            _counter("c_approaching", "ds_activation", "Approaching", 6, 0, "`current_state` IN ('approaching')"),
+            _counter("c_defaulted", "ds_rung", "Defaulted", 8, 0, "`lifecycle_state` IN ('defaulted')"),
+            _counter("c_unclassified", "ds_rung", "Unclassified", 10, 0, "`is_unclassified` = true"),
+            _bar("b_rung", "ds_rung", "rung_label", "Rung distribution", "Merchants", 0, 3),
+            _bar("b_lifecycle", "ds_rung", "lifecycle_state", "Lifecycle", "Merchants", 4, 3),
+            _bar("b_play", "ds_activation", "active_play", "Active play", "Merchants", 8, 3),
+            _table("t_bookhealth", "ds_bookhealth", _BH_COLS, "Book Health metrics", 0, 9, 12, 8),
         ],
     },
     {
         "name": "page_daily_queue", "displayName": "Daily Queue",
-        "layout": [_table("t_queue", "ds_queue", _QUEUE_COLS, 0, 0, 6, 16)],
+        "layout": [_table("t_queue", "ds_queue", _QUEUE_COLS, "Daily queue (sliding-first)", 0, 0, 12, 18)],
     },
     {
         "name": "page_merchant_360", "displayName": "Merchant 360",
-        "layout": [_table("t_360", "ds_360", _360_COLS, 0, 0, 6, 18)],
+        "layout": [_table("t_360", "ds_360", _360_COLS, "Merchant 360 (lowest confidence first)", 0, 0, 12, 20)],
     },
 ]
 
@@ -167,17 +158,11 @@ def main():
     spec_path = os.path.join(here, "mri_dashboard.lvdash.json")
     with open(spec_path, "w", encoding="utf-8") as f:
         json.dump(DASHBOARD, f, indent=2)
-    body = {
-        "display_name": DISPLAY_NAME,
-        "warehouse_id": WAREHOUSE_ID,
-        "parent_path": PARENT_PATH,
-        "serialized_dashboard": json.dumps(DASHBOARD),
-    }
-    body_path = os.path.join(os.path.dirname(here), ".dashboard_body.json")
-    with open(body_path, "w", encoding="utf-8") as f:
+    body = {"display_name": DISPLAY_NAME, "warehouse_id": WAREHOUSE_ID,
+            "parent_path": PARENT_PATH, "serialized_dashboard": json.dumps(DASHBOARD)}
+    with open(os.path.join(os.path.dirname(here), ".dashboard_body.json"), "w", encoding="utf-8") as f:
         json.dump(body, f)
     print(f"wrote {spec_path}")
-    print(f"wrote {body_path}")
 
 
 if __name__ == "__main__":

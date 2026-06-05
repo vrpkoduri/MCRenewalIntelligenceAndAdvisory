@@ -1,38 +1,17 @@
 {
   "datasets": [
     {
-      "name": "ds_counts",
-      "displayName": "Rung counts",
+      "name": "ds_rung",
+      "displayName": "Merchant rung (current)",
       "queryLines": [
-        "SELECT count(*) AS total_merchants, sum(case when lifecycle_state='active' then 1 else 0 end) AS active_merchants, sum(case when direction_of_travel='sliding' then 1 else 0 end) AS sliding_merchants, sum(case when lifecycle_state='defaulted' then 1 else 0 end) AS defaulted_merchants, sum(case when is_unclassified then 1 else 0 end) AS unclassified_merchants FROM mca_mri.gold.merchant_rung_current"
+        "SELECT merchant_id, coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, lifecycle_state, direction_of_travel, is_unclassified, confidence FROM mca_mri.gold.merchant_rung_current"
       ]
     },
     {
-      "name": "ds_state_counts",
-      "displayName": "State counts",
+      "name": "ds_activation",
+      "displayName": "Merchant activation (current)",
       "queryLines": [
-        "SELECT sum(case when current_state='approaching' then 1 else 0 end) AS approaching, sum(case when current_state='in-market' then 1 else 0 end) AS in_market FROM mca_mri.gold.merchant_activation_current"
-      ]
-    },
-    {
-      "name": "ds_rung_dist",
-      "displayName": "Rung distribution",
-      "queryLines": [
-        "SELECT coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, count(*) AS n FROM mca_mri.gold.merchant_rung_current GROUP BY 1 ORDER BY 1"
-      ]
-    },
-    {
-      "name": "ds_lifecycle_dist",
-      "displayName": "Lifecycle distribution",
-      "queryLines": [
-        "SELECT lifecycle_state, count(*) AS n FROM mca_mri.gold.merchant_rung_current GROUP BY 1 ORDER BY 2 DESC"
-      ]
-    },
-    {
-      "name": "ds_play_dist",
-      "displayName": "Play distribution",
-      "queryLines": [
-        "SELECT active_play, count(*) AS n FROM mca_mri.gold.merchant_activation_current GROUP BY 1 ORDER BY 2 DESC"
+        "SELECT merchant_id, current_state, active_play FROM mca_mri.gold.merchant_activation_current"
       ]
     },
     {
@@ -67,13 +46,13 @@
             "name": "c_total",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_counts",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "sum_total_merchants",
-                      "expression": "SUM(`total_merchants`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
                   "disaggregated": false
@@ -82,10 +61,14 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total merchants"
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum_total_merchants",
+                  "fieldName": "count(merchant_id)",
                   "displayName": "Total merchants"
                 }
               }
@@ -94,7 +77,7 @@
           "position": {
             "x": 0,
             "y": 0,
-            "width": 1,
+            "width": 2,
             "height": 3
           }
         },
@@ -103,34 +86,43 @@
             "name": "c_active",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_counts",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "sum_active_merchants",
-                      "expression": "SUM(`active_merchants`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`lifecycle_state` IN ('active')"
+                    }
+                  ]
                 }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Active"
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum_active_merchants",
+                  "fieldName": "count(merchant_id)",
                   "displayName": "Active"
                 }
               }
             }
           },
           "position": {
-            "x": 1,
+            "x": 2,
             "y": 0,
-            "width": 1,
+            "width": 2,
             "height": 3
           }
         },
@@ -139,34 +131,43 @@
             "name": "c_sliding",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_counts",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "sum_sliding_merchants",
-                      "expression": "SUM(`sliding_merchants`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`direction_of_travel` IN ('sliding')"
+                    }
+                  ]
                 }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Sliding"
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum_sliding_merchants",
+                  "fieldName": "count(merchant_id)",
                   "displayName": "Sliding"
                 }
               }
             }
           },
           "position": {
-            "x": 2,
+            "x": 4,
             "y": 0,
-            "width": 1,
+            "width": 2,
             "height": 3
           }
         },
@@ -175,34 +176,43 @@
             "name": "c_approaching",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_state_counts",
+                  "datasetName": "ds_activation",
                   "fields": [
                     {
-                      "name": "sum_approaching",
-                      "expression": "SUM(`approaching`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`current_state` IN ('approaching')"
+                    }
+                  ]
                 }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Approaching"
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum_approaching",
+                  "fieldName": "count(merchant_id)",
                   "displayName": "Approaching"
                 }
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 0,
-            "width": 1,
+            "width": 2,
             "height": 3
           }
         },
@@ -211,34 +221,43 @@
             "name": "c_defaulted",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_counts",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "sum_defaulted_merchants",
-                      "expression": "SUM(`defaulted_merchants`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`lifecycle_state` IN ('defaulted')"
+                    }
+                  ]
                 }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Defaulted"
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum_defaulted_merchants",
+                  "fieldName": "count(merchant_id)",
                   "displayName": "Defaulted"
                 }
               }
             }
           },
           "position": {
-            "x": 4,
+            "x": 8,
             "y": 0,
-            "width": 1,
+            "width": 2,
             "height": 3
           }
         },
@@ -247,34 +266,43 @@
             "name": "c_unclassified",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_counts",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "sum_unclassified_merchants",
-                      "expression": "SUM(`unclassified_merchants`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`is_unclassified` = true"
+                    }
+                  ]
                 }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Unclassified"
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum_unclassified_merchants",
+                  "fieldName": "count(merchant_id)",
                   "displayName": "Unclassified"
                 }
               }
             }
           },
           "position": {
-            "x": 5,
+            "x": 10,
             "y": 0,
-            "width": 1,
+            "width": 2,
             "height": 3
           }
         },
@@ -283,17 +311,17 @@
             "name": "b_rung",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_rung_dist",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
                       "name": "rung_label",
                       "expression": "`rung_label`"
                     },
                     {
-                      "name": "sum_n",
-                      "expression": "SUM(`n`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
                   "disaggregated": false
@@ -302,6 +330,10 @@
             ],
             "spec": {
               "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Rung distribution"
+              },
               "widgetType": "bar",
               "encodings": {
                 "x": {
@@ -309,10 +341,10 @@
                   "scale": {
                     "type": "categorical"
                   },
-                  "displayName": "Rung"
+                  "displayName": "Rung distribution"
                 },
                 "y": {
-                  "fieldName": "sum_n",
+                  "fieldName": "count(merchant_id)",
                   "scale": {
                     "type": "quantitative"
                   },
@@ -324,7 +356,7 @@
           "position": {
             "x": 0,
             "y": 3,
-            "width": 2,
+            "width": 4,
             "height": 6
           }
         },
@@ -333,17 +365,17 @@
             "name": "b_lifecycle",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
-                  "datasetName": "ds_lifecycle_dist",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
                       "name": "lifecycle_state",
                       "expression": "`lifecycle_state`"
                     },
                     {
-                      "name": "sum_n",
-                      "expression": "SUM(`n`)"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
                   "disaggregated": false
@@ -352,6 +384,10 @@
             ],
             "spec": {
               "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Lifecycle"
+              },
               "widgetType": "bar",
               "encodings": {
                 "x": {
@@ -362,57 +398,7 @@
                   "displayName": "Lifecycle"
                 },
                 "y": {
-                  "fieldName": "sum_n",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Merchants"
-                }
-              }
-            }
-          },
-          "position": {
-            "x": 2,
-            "y": 3,
-            "width": 2,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "b_play",
-            "queries": [
-              {
-                "name": "main",
-                "query": {
-                  "datasetName": "ds_play_dist",
-                  "fields": [
-                    {
-                      "name": "active_play",
-                      "expression": "`active_play`"
-                    },
-                    {
-                      "name": "sum_n",
-                      "expression": "SUM(`n`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "active_play",
-                  "scale": {
-                    "type": "categorical"
-                  },
-                  "displayName": "Play"
-                },
-                "y": {
-                  "fieldName": "sum_n",
+                  "fieldName": "count(merchant_id)",
                   "scale": {
                     "type": "quantitative"
                   },
@@ -424,7 +410,61 @@
           "position": {
             "x": 4,
             "y": 3,
-            "width": 2,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b_play",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_activation",
+                  "fields": [
+                    {
+                      "name": "active_play",
+                      "expression": "`active_play`"
+                    },
+                    {
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Active play"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "active_play",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Active play"
+                },
+                "y": {
+                  "fieldName": "count(merchant_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Merchants"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
             "height": 6
           }
         },
@@ -433,7 +473,7 @@
             "name": "t_bookhealth",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_bookhealth",
                   "fields": [
@@ -464,6 +504,10 @@
             ],
             "spec": {
               "version": 1,
+              "frame": {
+                "showTitle": true,
+                "title": "Book Health metrics"
+              },
               "widgetType": "table",
               "encodings": {
                 "columns": [
@@ -494,7 +538,7 @@
           "position": {
             "x": 0,
             "y": 9,
-            "width": 6,
+            "width": 12,
             "height": 8
           }
         }
@@ -509,7 +553,7 @@
             "name": "t_queue",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_queue",
                   "fields": [
@@ -560,6 +604,10 @@
             ],
             "spec": {
               "version": 1,
+              "frame": {
+                "showTitle": true,
+                "title": "Daily queue (sliding-first)"
+              },
               "widgetType": "table",
               "encodings": {
                 "columns": [
@@ -610,8 +658,8 @@
           "position": {
             "x": 0,
             "y": 0,
-            "width": 6,
-            "height": 16
+            "width": 12,
+            "height": 18
           }
         }
       ]
@@ -625,7 +673,7 @@
             "name": "t_360",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_360",
                   "fields": [
@@ -708,6 +756,10 @@
             ],
             "spec": {
               "version": 1,
+              "frame": {
+                "showTitle": true,
+                "title": "Merchant 360 (lowest confidence first)"
+              },
               "widgetType": "table",
               "encodings": {
                 "columns": [
@@ -790,8 +842,8 @@
           "position": {
             "x": 0,
             "y": 0,
-            "width": 6,
-            "height": 18
+            "width": 12,
+            "height": 20
           }
         }
       ]
