@@ -72,7 +72,7 @@
                   "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "count(merchant_id)",
+                      "name": "value",
                       "expression": "COUNT(`merchant_id`)"
                     }
                   ],
@@ -89,7 +89,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(merchant_id)",
+                  "fieldName": "value",
                   "displayName": "Total merchants"
                 }
               }
@@ -112,16 +112,11 @@
                   "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "value",
+                      "expression": "COUNT_IF(`lifecycle_state` = 'active')"
                     }
                   ],
-                  "disaggregated": false,
-                  "filters": [
-                    {
-                      "expression": "`lifecycle_state` IN ('active')"
-                    }
-                  ]
+                  "disaggregated": false
                 }
               }
             ],
@@ -134,7 +129,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(merchant_id)",
+                  "fieldName": "value",
                   "displayName": "Active"
                 }
               }
@@ -157,16 +152,11 @@
                   "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "value",
+                      "expression": "COUNT_IF(`direction_of_travel` = 'sliding')"
                     }
                   ],
-                  "disaggregated": false,
-                  "filters": [
-                    {
-                      "expression": "`direction_of_travel` IN ('sliding')"
-                    }
-                  ]
+                  "disaggregated": false
                 }
               }
             ],
@@ -179,7 +169,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(merchant_id)",
+                  "fieldName": "value",
                   "displayName": "Sliding"
                 }
               }
@@ -202,16 +192,11 @@
                   "datasetName": "ds_activation",
                   "fields": [
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "value",
+                      "expression": "COUNT_IF(`current_state` = 'approaching')"
                     }
                   ],
-                  "disaggregated": false,
-                  "filters": [
-                    {
-                      "expression": "`current_state` IN ('approaching')"
-                    }
-                  ]
+                  "disaggregated": false
                 }
               }
             ],
@@ -224,7 +209,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(merchant_id)",
+                  "fieldName": "value",
                   "displayName": "Approaching"
                 }
               }
@@ -247,16 +232,11 @@
                   "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "value",
+                      "expression": "COUNT_IF(`lifecycle_state` = 'defaulted')"
                     }
                   ],
-                  "disaggregated": false,
-                  "filters": [
-                    {
-                      "expression": "`lifecycle_state` IN ('defaulted')"
-                    }
-                  ]
+                  "disaggregated": false
                 }
               }
             ],
@@ -269,7 +249,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(merchant_id)",
+                  "fieldName": "value",
                   "displayName": "Defaulted"
                 }
               }
@@ -292,16 +272,11 @@
                   "datasetName": "ds_rung",
                   "fields": [
                     {
-                      "name": "count(merchant_id)",
-                      "expression": "COUNT(`merchant_id`)"
+                      "name": "value",
+                      "expression": "COUNT_IF(`is_unclassified`)"
                     }
                   ],
-                  "disaggregated": false,
-                  "filters": [
-                    {
-                      "expression": "`is_unclassified` = true"
-                    }
-                  ]
+                  "disaggregated": false
                 }
               }
             ],
@@ -314,7 +289,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(merchant_id)",
+                  "fieldName": "value",
                   "displayName": "Unclassified"
                 }
               }
@@ -350,7 +325,7 @@
               }
             ],
             "spec": {
-              "version": 1,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "Rung distribution"
@@ -359,12 +334,10 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "rung_label",
-                    "displayName": "rung_label"
+                    "fieldName": "rung_label"
                   },
                   {
-                    "fieldName": "merchants",
-                    "displayName": "merchants"
+                    "fieldName": "merchants"
                   }
                 ]
               }
@@ -400,7 +373,7 @@
               }
             ],
             "spec": {
-              "version": 1,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "Lifecycle distribution"
@@ -409,12 +382,10 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "lifecycle_state",
-                    "displayName": "lifecycle_state"
+                    "fieldName": "lifecycle_state"
                   },
                   {
-                    "fieldName": "merchants",
-                    "displayName": "merchants"
+                    "fieldName": "merchants"
                   }
                 ]
               }
@@ -450,7 +421,7 @@
               }
             ],
             "spec": {
-              "version": 1,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "Active play distribution"
@@ -459,12 +430,10 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "active_play",
-                    "displayName": "active_play"
+                    "fieldName": "active_play"
                   },
                   {
-                    "fieldName": "merchants",
-                    "displayName": "merchants"
+                    "fieldName": "merchants"
                   }
                 ]
               }
@@ -512,7 +481,7 @@
               }
             ],
             "spec": {
-              "version": 1,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "Book Health metrics"
@@ -521,24 +490,19 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "view",
-                    "displayName": "view"
+                    "fieldName": "view"
                   },
                   {
-                    "fieldName": "metric",
-                    "displayName": "metric"
+                    "fieldName": "metric"
                   },
                   {
-                    "fieldName": "dimension_value",
-                    "displayName": "dimension_value"
+                    "fieldName": "dimension_value"
                   },
                   {
-                    "fieldName": "value_num",
-                    "displayName": "value_num"
+                    "fieldName": "value_num"
                   },
                   {
-                    "fieldName": "value_pct",
-                    "displayName": "value_pct"
+                    "fieldName": "value_pct"
                   }
                 ]
               }
@@ -612,7 +576,7 @@
               }
             ],
             "spec": {
-              "version": 1,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "Daily queue (sliding-first)"
@@ -621,44 +585,34 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "queue_rank",
-                    "displayName": "queue_rank"
+                    "fieldName": "queue_rank"
                   },
                   {
-                    "fieldName": "business_name",
-                    "displayName": "business_name"
+                    "fieldName": "business_name"
                   },
                   {
-                    "fieldName": "rung",
-                    "displayName": "rung"
+                    "fieldName": "rung"
                   },
                   {
-                    "fieldName": "lifecycle_state",
-                    "displayName": "lifecycle_state"
+                    "fieldName": "lifecycle_state"
                   },
                   {
-                    "fieldName": "current_state",
-                    "displayName": "current_state"
+                    "fieldName": "current_state"
                   },
                   {
-                    "fieldName": "active_play",
-                    "displayName": "active_play"
+                    "fieldName": "active_play"
                   },
                   {
-                    "fieldName": "play_sla_due",
-                    "displayName": "play_sla_due"
+                    "fieldName": "play_sla_due"
                   },
                   {
-                    "fieldName": "direction_of_travel",
-                    "displayName": "direction_of_travel"
+                    "fieldName": "direction_of_travel"
                   },
                   {
-                    "fieldName": "confidence",
-                    "displayName": "confidence"
+                    "fieldName": "confidence"
                   },
                   {
-                    "fieldName": "next_tactical_action",
-                    "displayName": "next_tactical_action"
+                    "fieldName": "next_tactical_action"
                   }
                 ]
               }
@@ -764,7 +718,7 @@
               }
             ],
             "spec": {
-              "version": 1,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "Merchant 360 (lowest confidence first)"
@@ -773,76 +727,58 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "business_name",
-                    "displayName": "business_name"
+                    "fieldName": "business_name"
                   },
                   {
-                    "fieldName": "rung",
-                    "displayName": "rung"
+                    "fieldName": "rung"
                   },
                   {
-                    "fieldName": "lifecycle_state",
-                    "displayName": "lifecycle_state"
+                    "fieldName": "lifecycle_state"
                   },
                   {
-                    "fieldName": "confidence",
-                    "displayName": "confidence"
+                    "fieldName": "confidence"
                   },
                   {
-                    "fieldName": "direction_of_travel",
-                    "displayName": "direction_of_travel"
+                    "fieldName": "direction_of_travel"
                   },
                   {
-                    "fieldName": "est_paydown_pct",
-                    "displayName": "est_paydown_pct"
+                    "fieldName": "est_paydown_pct"
                   },
                   {
-                    "fieldName": "is_eligible_now",
-                    "displayName": "is_eligible_now"
+                    "fieldName": "is_eligible_now"
                   },
                   {
-                    "fieldName": "est_renewal_eligible_date",
-                    "displayName": "est_renewal_eligible_date"
+                    "fieldName": "est_renewal_eligible_date"
                   },
                   {
-                    "fieldName": "current_state",
-                    "displayName": "current_state"
+                    "fieldName": "current_state"
                   },
                   {
-                    "fieldName": "active_play",
-                    "displayName": "active_play"
+                    "fieldName": "active_play"
                   },
                   {
-                    "fieldName": "play_sla_due",
-                    "displayName": "play_sla_due"
+                    "fieldName": "play_sla_due"
                   },
                   {
-                    "fieldName": "next_tactical_action",
-                    "displayName": "next_tactical_action"
+                    "fieldName": "next_tactical_action"
                   },
                   {
-                    "fieldName": "p_alive",
-                    "displayName": "p_alive"
+                    "fieldName": "p_alive"
                   },
                   {
-                    "fieldName": "p_defection",
-                    "displayName": "p_defection"
+                    "fieldName": "p_defection"
                   },
                   {
-                    "fieldName": "predicted_next_event_date",
-                    "displayName": "predicted_next_event_date"
+                    "fieldName": "predicted_next_event_date"
                   },
                   {
-                    "fieldName": "predicted_clv",
-                    "displayName": "predicted_clv"
+                    "fieldName": "predicted_clv"
                   },
                   {
-                    "fieldName": "prediction_confidence",
-                    "displayName": "prediction_confidence"
+                    "fieldName": "prediction_confidence"
                   },
                   {
-                    "fieldName": "insufficient_history",
-                    "displayName": "insufficient_history"
+                    "fieldName": "insufficient_history"
                   }
                 ]
               }

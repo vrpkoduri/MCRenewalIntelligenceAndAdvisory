@@ -63,21 +63,20 @@ DATASETS = [
 ]
 
 
-def _counter(name, dataset, display, x, y, filter_expr=None, w=2, h=3):
-    """COUNT(`merchant_id`) over a granular dataset, optionally filtered — the widget
-    aggregates (disaggregated:false), matching the known-good pattern."""
-    q = {"datasetName": dataset,
-         "fields": [{"name": "count(merchant_id)", "expression": "COUNT(`merchant_id`)"}],
-         "disaggregated": False}
-    if filter_expr:
-        q["filters"] = [{"expression": filter_expr}]
+def _counter(name, dataset, display, x, y, cond=None, w=2, h=3):
+    """COUNT / COUNT_IF over the full (granular) dataset, disaggregated:false. Using COUNT_IF
+    (not a filter) means an empty condition still returns one row -> shows 0, not 'No data'."""
+    expr = "COUNT(`merchant_id`)" if cond is None else f"COUNT_IF({cond})"
     return {
         "widget": {
             "name": name,
-            "queries": [{"name": "main_query", "query": q}],
+            "queries": [{"name": "main_query", "query": {
+                "datasetName": dataset,
+                "fields": [{"name": "value", "expression": expr}],
+                "disaggregated": False}}],
             "spec": {"version": 2, "frame": {"showTitle": True, "title": display},
                      "widgetType": "counter",
-                     "encodings": {"value": {"fieldName": "count(merchant_id)", "displayName": display}}},
+                     "encodings": {"value": {"fieldName": "value", "displayName": display}}},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
     }
@@ -115,9 +114,9 @@ def _table(name, dataset, cols, title, x, y, w=12, h=12):
                 "fields": [{"name": c, "expression": f"`{c}`"} for c in cols],
                 "disaggregated": True,
             }}],
-            "spec": {"version": 1, "frame": {"showTitle": True, "title": title},
+            "spec": {"version": 2, "frame": {"showTitle": True, "title": title},
                      "widgetType": "table",
-                     "encodings": {"columns": [{"fieldName": c, "displayName": c} for c in cols]}},
+                     "encodings": {"columns": [{"fieldName": c} for c in cols]}},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
     }
@@ -136,11 +135,11 @@ PAGES = [
         "name": "page_book_health", "displayName": "Book Health",
         "layout": [
             _counter("c_total", "ds_rung", "Total merchants", 0, 0),
-            _counter("c_active", "ds_rung", "Active", 2, 0, "`lifecycle_state` IN ('active')"),
-            _counter("c_sliding", "ds_rung", "Sliding", 4, 0, "`direction_of_travel` IN ('sliding')"),
-            _counter("c_approaching", "ds_activation", "Approaching", 6, 0, "`current_state` IN ('approaching')"),
-            _counter("c_defaulted", "ds_rung", "Defaulted", 8, 0, "`lifecycle_state` IN ('defaulted')"),
-            _counter("c_unclassified", "ds_rung", "Unclassified", 10, 0, "`is_unclassified` = true"),
+            _counter("c_active", "ds_rung", "Active", 2, 0, "`lifecycle_state` = 'active'"),
+            _counter("c_sliding", "ds_rung", "Sliding", 4, 0, "`direction_of_travel` = 'sliding'"),
+            _counter("c_approaching", "ds_activation", "Approaching", 6, 0, "`current_state` = 'approaching'"),
+            _counter("c_defaulted", "ds_rung", "Defaulted", 8, 0, "`lifecycle_state` = 'defaulted'"),
+            _counter("c_unclassified", "ds_rung", "Unclassified", 10, 0, "`is_unclassified`"),
             _table("t_rung", "ds_rung_dist", ["rung_label", "merchants"], "Rung distribution", 0, 3, 4, 6),
             _table("t_lifecycle", "ds_lifecycle_dist", ["lifecycle_state", "merchants"], "Lifecycle distribution", 4, 3, 4, 6),
             _table("t_play", "ds_play_dist", ["active_play", "merchants"], "Active play distribution", 8, 3, 4, 6),
