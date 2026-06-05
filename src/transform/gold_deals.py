@@ -78,7 +78,10 @@ def derive_renewal_chain(deals_with_merchant: DataFrame) -> DataFrame:
     )
     prior_deal = F.lag("deal_id").over(w)
     prior_rate = F.lag("factor_rate").over(w)
-    is_renewal_type = F.col("deal_type").isin(C.DealType.RENEWAL, C.DealType.BUYOUT)
+    # FU-601: repeat advances = all non-New types (Renewal / Buyout / Stack / Add-On). Stack &
+    # Add-On are repeat advances too and must link the renewal chain (previously missed by a
+    # literal {Renewal, Buyout}). Broadens is_renewal_of / prior_factor_rate / renewal_unlinkable.
+    is_renewal_type = F.col("deal_type").isin(list(C.DealType.REPEAT_TYPES))
 
     return (
         deals_with_merchant.withColumn(
