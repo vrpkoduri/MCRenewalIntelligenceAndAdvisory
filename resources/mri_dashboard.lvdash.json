@@ -4,35 +4,14 @@
       "name": "ds_rung",
       "displayName": "Merchant rung (current)",
       "queryLines": [
-        "SELECT merchant_id, coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, lifecycle_state, direction_of_travel, is_unclassified, confidence FROM mca_mri.gold.merchant_rung_current"
+        "SELECT merchant_id, coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, lifecycle_state, direction_of_travel, is_unclassified, confidence, (lifecycle_state='active') AS is_active, (lifecycle_state='defaulted') AS is_defaulted, (direction_of_travel='sliding') AS is_sliding FROM mca_mri.gold.merchant_rung_current"
       ]
     },
     {
       "name": "ds_activation",
       "displayName": "Merchant activation (current)",
       "queryLines": [
-        "SELECT merchant_id, current_state, active_play FROM mca_mri.gold.merchant_activation_current"
-      ]
-    },
-    {
-      "name": "ds_rung_dist",
-      "displayName": "Rung distribution",
-      "queryLines": [
-        "SELECT coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, count(*) AS merchants FROM mca_mri.gold.merchant_rung_current GROUP BY 1 ORDER BY 1"
-      ]
-    },
-    {
-      "name": "ds_lifecycle_dist",
-      "displayName": "Lifecycle distribution",
-      "queryLines": [
-        "SELECT lifecycle_state, count(*) AS merchants FROM mca_mri.gold.merchant_rung_current GROUP BY 1 ORDER BY 2 DESC"
-      ]
-    },
-    {
-      "name": "ds_play_dist",
-      "displayName": "Play distribution",
-      "queryLines": [
-        "SELECT active_play, count(*) AS merchants FROM mca_mri.gold.merchant_activation_current GROUP BY 1 ORDER BY 2 DESC"
+        "SELECT merchant_id, current_state, active_play, (current_state='approaching') AS is_approaching FROM mca_mri.gold.merchant_activation_current"
       ]
     },
     {
@@ -113,7 +92,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "COUNT_IF(`lifecycle_state` = 'active')"
+                      "expression": "COUNT_IF(`is_active`)"
                     }
                   ],
                   "disaggregated": false
@@ -153,7 +132,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "COUNT_IF(`direction_of_travel` = 'sliding')"
+                      "expression": "COUNT_IF(`is_sliding`)"
                     }
                   ],
                   "disaggregated": false
@@ -193,7 +172,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "COUNT_IF(`current_state` = 'approaching')"
+                      "expression": "COUNT_IF(`is_approaching`)"
                     }
                   ],
                   "disaggregated": false
@@ -233,7 +212,7 @@
                   "fields": [
                     {
                       "name": "value",
-                      "expression": "COUNT_IF(`lifecycle_state` = 'defaulted')"
+                      "expression": "COUNT_IF(`is_defaulted`)"
                     }
                   ],
                   "disaggregated": false
@@ -304,42 +283,54 @@
         },
         {
           "widget": {
-            "name": "t_rung",
+            "name": "b_rung",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_rung_dist",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
                       "name": "rung_label",
                       "expression": "`rung_label`"
                     },
                     {
-                      "name": "merchants",
-                      "expression": "`merchants`"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
             "spec": {
-              "version": 2,
+              "version": 3,
+              "widgetType": "bar",
               "frame": {
                 "showTitle": true,
                 "title": "Rung distribution"
               },
-              "widgetType": "table",
               "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "rung_label"
-                  },
-                  {
-                    "fieldName": "merchants"
+                "x": {
+                  "fieldName": "rung_label",
+                  "displayName": "Rung Label",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
                   }
-                ]
+                },
+                "y": {
+                  "fieldName": "count(merchant_id)",
+                  "displayName": "Merchants",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
               }
             }
           },
@@ -352,42 +343,54 @@
         },
         {
           "widget": {
-            "name": "t_lifecycle",
+            "name": "b_lifecycle",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_lifecycle_dist",
+                  "datasetName": "ds_rung",
                   "fields": [
                     {
                       "name": "lifecycle_state",
                       "expression": "`lifecycle_state`"
                     },
                     {
-                      "name": "merchants",
-                      "expression": "`merchants`"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
             "spec": {
-              "version": 2,
+              "version": 3,
+              "widgetType": "bar",
               "frame": {
                 "showTitle": true,
                 "title": "Lifecycle distribution"
               },
-              "widgetType": "table",
               "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "lifecycle_state"
-                  },
-                  {
-                    "fieldName": "merchants"
+                "x": {
+                  "fieldName": "lifecycle_state",
+                  "displayName": "Lifecycle State",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
                   }
-                ]
+                },
+                "y": {
+                  "fieldName": "count(merchant_id)",
+                  "displayName": "Merchants",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
               }
             }
           },
@@ -400,42 +403,54 @@
         },
         {
           "widget": {
-            "name": "t_play",
+            "name": "b_play",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_play_dist",
+                  "datasetName": "ds_activation",
                   "fields": [
                     {
                       "name": "active_play",
                       "expression": "`active_play`"
                     },
                     {
-                      "name": "merchants",
-                      "expression": "`merchants`"
+                      "name": "count(merchant_id)",
+                      "expression": "COUNT(`merchant_id`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
             "spec": {
-              "version": 2,
+              "version": 3,
+              "widgetType": "bar",
               "frame": {
                 "showTitle": true,
                 "title": "Active play distribution"
               },
-              "widgetType": "table",
               "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "active_play"
-                  },
-                  {
-                    "fieldName": "merchants"
+                "x": {
+                  "fieldName": "active_play",
+                  "displayName": "Active Play",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
                   }
-                ]
+                },
+                "y": {
+                  "fieldName": "count(merchant_id)",
+                  "displayName": "Merchants",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
               }
             }
           },
@@ -490,19 +505,24 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "view"
+                    "fieldName": "view",
+                    "displayName": "View"
                   },
                   {
-                    "fieldName": "metric"
+                    "fieldName": "metric",
+                    "displayName": "Metric"
                   },
                   {
-                    "fieldName": "dimension_value"
+                    "fieldName": "dimension_value",
+                    "displayName": "Dimension Value"
                   },
                   {
-                    "fieldName": "value_num"
+                    "fieldName": "value_num",
+                    "displayName": "Value Num"
                   },
                   {
-                    "fieldName": "value_pct"
+                    "fieldName": "value_pct",
+                    "displayName": "Value Pct"
                   }
                 ]
               }
@@ -585,34 +605,44 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "queue_rank"
+                    "fieldName": "queue_rank",
+                    "displayName": "Queue Rank"
                   },
                   {
-                    "fieldName": "business_name"
+                    "fieldName": "business_name",
+                    "displayName": "Business Name"
                   },
                   {
-                    "fieldName": "rung"
+                    "fieldName": "rung",
+                    "displayName": "Rung"
                   },
                   {
-                    "fieldName": "lifecycle_state"
+                    "fieldName": "lifecycle_state",
+                    "displayName": "Lifecycle State"
                   },
                   {
-                    "fieldName": "current_state"
+                    "fieldName": "current_state",
+                    "displayName": "Current State"
                   },
                   {
-                    "fieldName": "active_play"
+                    "fieldName": "active_play",
+                    "displayName": "Active Play"
                   },
                   {
-                    "fieldName": "play_sla_due"
+                    "fieldName": "play_sla_due",
+                    "displayName": "Play Sla Due"
                   },
                   {
-                    "fieldName": "direction_of_travel"
+                    "fieldName": "direction_of_travel",
+                    "displayName": "Direction Of Travel"
                   },
                   {
-                    "fieldName": "confidence"
+                    "fieldName": "confidence",
+                    "displayName": "Confidence"
                   },
                   {
-                    "fieldName": "next_tactical_action"
+                    "fieldName": "next_tactical_action",
+                    "displayName": "Next Tactical Action"
                   }
                 ]
               }
@@ -727,58 +757,76 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "business_name"
+                    "fieldName": "business_name",
+                    "displayName": "Business Name"
                   },
                   {
-                    "fieldName": "rung"
+                    "fieldName": "rung",
+                    "displayName": "Rung"
                   },
                   {
-                    "fieldName": "lifecycle_state"
+                    "fieldName": "lifecycle_state",
+                    "displayName": "Lifecycle State"
                   },
                   {
-                    "fieldName": "confidence"
+                    "fieldName": "confidence",
+                    "displayName": "Confidence"
                   },
                   {
-                    "fieldName": "direction_of_travel"
+                    "fieldName": "direction_of_travel",
+                    "displayName": "Direction Of Travel"
                   },
                   {
-                    "fieldName": "est_paydown_pct"
+                    "fieldName": "est_paydown_pct",
+                    "displayName": "Est Paydown Pct"
                   },
                   {
-                    "fieldName": "is_eligible_now"
+                    "fieldName": "is_eligible_now",
+                    "displayName": "Is Eligible Now"
                   },
                   {
-                    "fieldName": "est_renewal_eligible_date"
+                    "fieldName": "est_renewal_eligible_date",
+                    "displayName": "Est Renewal Eligible Date"
                   },
                   {
-                    "fieldName": "current_state"
+                    "fieldName": "current_state",
+                    "displayName": "Current State"
                   },
                   {
-                    "fieldName": "active_play"
+                    "fieldName": "active_play",
+                    "displayName": "Active Play"
                   },
                   {
-                    "fieldName": "play_sla_due"
+                    "fieldName": "play_sla_due",
+                    "displayName": "Play Sla Due"
                   },
                   {
-                    "fieldName": "next_tactical_action"
+                    "fieldName": "next_tactical_action",
+                    "displayName": "Next Tactical Action"
                   },
                   {
-                    "fieldName": "p_alive"
+                    "fieldName": "p_alive",
+                    "displayName": "P Alive"
                   },
                   {
-                    "fieldName": "p_defection"
+                    "fieldName": "p_defection",
+                    "displayName": "P Defection"
                   },
                   {
-                    "fieldName": "predicted_next_event_date"
+                    "fieldName": "predicted_next_event_date",
+                    "displayName": "Predicted Next Event Date"
                   },
                   {
-                    "fieldName": "predicted_clv"
+                    "fieldName": "predicted_clv",
+                    "displayName": "Predicted Clv"
                   },
                   {
-                    "fieldName": "prediction_confidence"
+                    "fieldName": "prediction_confidence",
+                    "displayName": "Prediction Confidence"
                   },
                   {
-                    "fieldName": "insufficient_history"
+                    "fieldName": "insufficient_history",
+                    "displayName": "Insufficient History"
                   }
                 ]
               }

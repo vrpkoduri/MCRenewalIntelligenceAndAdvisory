@@ -1,16 +1,18 @@
 """Build the MRI AI/BI (Lakeview) dashboard spec as code (C-021).
 
-A READ-ONLY renderer over PROD `mca_mri.gold` `_current` views (Framework §5.4/§5.8 — the
-dashboard is a renderer over the gold table; no writes, no SF). Three pages: Book Health
-scoreboard (management), Daily Queue (floor), Merchant 360 (per-merchant drill incl.
-predictions).
+READ-ONLY renderer over PROD `mca_mri.gold` `_current` views (Framework §5.4/§5.8). Three
+pages: Book Health (management), Daily Queue (floor), Merchant 360 (drill incl. predictions).
 
-Widget pattern mirrors a known-good workspace dashboard ("Morgan Cash Leads"): datasets
-return GRANULAR rows and the WIDGETS aggregate (COUNT + filters for counters, group-by COUNT
-for bars; tables render raw rows). 12-column grid. queries[].name = "main_query".
+Widget patterns are cloned from known-good workspace dashboards (verified specs):
+  - counters: COUNT / COUNT_IF(`bool_col`) over a granular dataset, disaggregated:false
+              (boolean flag columns, not string-literal comparisons — the form that renders).
+  - bars:     x = raw dimension, y = COUNT(`merchant_id`) aggregate, disaggregated:false,
+              spec version 3 (from the "Cost Per Workspace" dashboard).
+  - tables:   raw rows, spec version 2 (from "Morgan Cash Leads").
+12-column grid; friendly column headers via displayName.
 
-Run locally (pure Python): writes resources/mri_dashboard.lvdash.json + .dashboard_body.json,
-then deploy/update via the Lakeview Dashboards API (see RUNBOOK).
+Run locally (pure Python): writes resources/mri_dashboard.lvdash.json + .dashboard_body.json.
+Deploy/update via the Lakeview Dashboards API (RUNBOOK).
 """
 
 from __future__ import annotations
@@ -31,16 +33,12 @@ def _ds(name, display, sql):
 DATASETS = [
     _ds("ds_rung", "Merchant rung (current)",
         f"SELECT merchant_id, coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, "
-        f"lifecycle_state, direction_of_travel, is_unclassified, confidence FROM {G}.merchant_rung_current"),
+        f"lifecycle_state, direction_of_travel, is_unclassified, confidence, "
+        f"(lifecycle_state='active') AS is_active, (lifecycle_state='defaulted') AS is_defaulted, "
+        f"(direction_of_travel='sliding') AS is_sliding FROM {G}.merchant_rung_current"),
     _ds("ds_activation", "Merchant activation (current)",
-        f"SELECT merchant_id, current_state, active_play FROM {G}.merchant_activation_current"),
-    _ds("ds_rung_dist", "Rung distribution",
-        f"SELECT coalesce(cast(rung as string),'(gated/unclassified)') AS rung_label, count(*) AS merchants "
-        f"FROM {G}.merchant_rung_current GROUP BY 1 ORDER BY 1"),
-    _ds("ds_lifecycle_dist", "Lifecycle distribution",
-        f"SELECT lifecycle_state, count(*) AS merchants FROM {G}.merchant_rung_current GROUP BY 1 ORDER BY 2 DESC"),
-    _ds("ds_play_dist", "Play distribution",
-        f"SELECT active_play, count(*) AS merchants FROM {G}.merchant_activation_current GROUP BY 1 ORDER BY 2 DESC"),
+        f"SELECT merchant_id, current_state, active_play, (current_state='approaching') AS is_approaching "
+        f"FROM {G}.merchant_activation_current"),
     _ds("ds_bookhealth", "Book Health metrics",
         f"SELECT view, metric, dimension_value, value_num, value_pct FROM {G}.book_health "
         f"WHERE report_date=(SELECT max(report_date) FROM {G}.book_health) ORDER BY view, metric, dimension_value"),
@@ -63,10 +61,12 @@ DATASETS = [
 ]
 
 
-def _counter(name, dataset, display, x, y, cond=None, w=2, h=3):
-    """COUNT / COUNT_IF over the full (granular) dataset, disaggregated:false. Using COUNT_IF
-    (not a filter) means an empty condition still returns one row -> shows 0, not 'No data'."""
-    expr = "COUNT(`merchant_id`)" if cond is None else f"COUNT_IF({cond})"
+def _label(c):
+    return c.replace("_", " ").title()
+
+
+def _counter(name, dataset, display, x, y, bool_col=None, w=2, h=3):
+    expr = "COUNT(`merchant_id`)" if bool_col is None else f"COUNT_IF(`{bool_col}`)"
     return {
         "widget": {
             "name": name,
@@ -82,24 +82,24 @@ def _counter(name, dataset, display, x, y, cond=None, w=2, h=3):
     }
 
 
-def _bar(name, dataset, group_col, xlabel, ylabel, x, y, w=4, h=6):
-    """Group-by bar: x = the category field, y = COUNT(`merchant_id`); the widget groups
-    (disaggregated:false)."""
+def _bar(name, dataset, dim_col, title, x, y, w=4, h=6):
+    """Verified bar pattern: x = raw dimension, y = COUNT(merchant_id), disaggregated:false."""
     return {
         "widget": {
             "name": name,
             "queries": [{"name": "main_query", "query": {
                 "datasetName": dataset,
-                "fields": [{"name": group_col, "expression": f"`{group_col}`"},
+                "fields": [{"name": dim_col, "expression": f"`{dim_col}`"},
                            {"name": "count(merchant_id)", "expression": "COUNT(`merchant_id`)"}],
-                "disaggregated": False,
-            }}],
-            "spec": {"version": 3, "frame": {"showTitle": True, "title": xlabel},
-                     "widgetType": "bar",
+                "disaggregated": False}}],
+            "spec": {"version": 3, "widgetType": "bar",
+                     "frame": {"showTitle": True, "title": title},
                      "encodings": {
-                         "x": {"fieldName": group_col, "scale": {"type": "categorical"}, "displayName": xlabel},
-                         "y": {"fieldName": "count(merchant_id)", "scale": {"type": "quantitative"}, "displayName": ylabel},
-                     }},
+                         "x": {"fieldName": dim_col, "displayName": _label(dim_col),
+                               "scale": {"type": "categorical", "sort": {"by": "y-reversed"}}},
+                         "y": {"fieldName": "count(merchant_id)", "displayName": "Merchants",
+                               "scale": {"type": "quantitative"}},
+                         "label": {"show": True}}},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
     }
@@ -112,11 +112,10 @@ def _table(name, dataset, cols, title, x, y, w=12, h=12):
             "queries": [{"name": "main_query", "query": {
                 "datasetName": dataset,
                 "fields": [{"name": c, "expression": f"`{c}`"} for c in cols],
-                "disaggregated": True,
-            }}],
+                "disaggregated": True}}],
             "spec": {"version": 2, "frame": {"showTitle": True, "title": title},
                      "widgetType": "table",
-                     "encodings": {"columns": [{"fieldName": c} for c in cols]}},
+                     "encodings": {"columns": [{"fieldName": c, "displayName": _label(c)} for c in cols]}},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
     }
@@ -135,14 +134,14 @@ PAGES = [
         "name": "page_book_health", "displayName": "Book Health",
         "layout": [
             _counter("c_total", "ds_rung", "Total merchants", 0, 0),
-            _counter("c_active", "ds_rung", "Active", 2, 0, "`lifecycle_state` = 'active'"),
-            _counter("c_sliding", "ds_rung", "Sliding", 4, 0, "`direction_of_travel` = 'sliding'"),
-            _counter("c_approaching", "ds_activation", "Approaching", 6, 0, "`current_state` = 'approaching'"),
-            _counter("c_defaulted", "ds_rung", "Defaulted", 8, 0, "`lifecycle_state` = 'defaulted'"),
-            _counter("c_unclassified", "ds_rung", "Unclassified", 10, 0, "`is_unclassified`"),
-            _table("t_rung", "ds_rung_dist", ["rung_label", "merchants"], "Rung distribution", 0, 3, 4, 6),
-            _table("t_lifecycle", "ds_lifecycle_dist", ["lifecycle_state", "merchants"], "Lifecycle distribution", 4, 3, 4, 6),
-            _table("t_play", "ds_play_dist", ["active_play", "merchants"], "Active play distribution", 8, 3, 4, 6),
+            _counter("c_active", "ds_rung", "Active", 2, 0, "is_active"),
+            _counter("c_sliding", "ds_rung", "Sliding", 4, 0, "is_sliding"),
+            _counter("c_approaching", "ds_activation", "Approaching", 6, 0, "is_approaching"),
+            _counter("c_defaulted", "ds_rung", "Defaulted", 8, 0, "is_defaulted"),
+            _counter("c_unclassified", "ds_rung", "Unclassified", 10, 0, "is_unclassified"),
+            _bar("b_rung", "ds_rung", "rung_label", "Rung distribution", 0, 3),
+            _bar("b_lifecycle", "ds_rung", "lifecycle_state", "Lifecycle distribution", 4, 3),
+            _bar("b_play", "ds_activation", "active_play", "Active play distribution", 8, 3),
             _table("t_bookhealth", "ds_bookhealth", _BH_COLS, "Book Health metrics", 0, 9, 12, 8),
         ],
     },
