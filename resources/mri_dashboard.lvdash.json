@@ -506,23 +506,37 @@
                 "columns": [
                   {
                     "fieldName": "view",
-                    "displayName": "View"
+                    "displayName": "View",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "metric",
-                    "displayName": "Metric"
+                    "displayName": "Metric",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "dimension_value",
-                    "displayName": "Dimension Value"
+                    "displayName": "Dimension Value",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "value_num",
-                    "displayName": "Value Num"
+                    "displayName": "Value Num",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "#,##0.00",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "value_pct",
-                    "displayName": "Value Pct"
+                    "displayName": "Value Pct",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   }
                 ]
               }
@@ -606,43 +620,70 @@
                 "columns": [
                   {
                     "fieldName": "queue_rank",
-                    "displayName": "Queue Rank"
+                    "displayName": "Queue Rank",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "#,##0",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "business_name",
-                    "displayName": "Business Name"
+                    "displayName": "Business Name",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "rung",
-                    "displayName": "Rung"
+                    "displayName": "Rung",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "#,##0",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "lifecycle_state",
-                    "displayName": "Lifecycle State"
+                    "displayName": "Lifecycle State",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "current_state",
-                    "displayName": "Current State"
+                    "displayName": "Current State",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "active_play",
-                    "displayName": "Active Play"
+                    "displayName": "Active Play",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "play_sla_due",
-                    "displayName": "Play Sla Due"
+                    "displayName": "Play Sla Due",
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "dateTimeFormat": "YYYY-MM-DD"
                   },
                   {
                     "fieldName": "direction_of_travel",
-                    "displayName": "Direction Of Travel"
+                    "displayName": "Direction Of Travel",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "confidence",
-                    "displayName": "Confidence"
+                    "displayName": "Confidence",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "next_tactical_action",
-                    "displayName": "Next Tactical Action"
+                    "displayName": "Next Tactical Action",
+                    "type": "string",
+                    "displayAs": "string"
                   }
                 ]
               }
@@ -758,75 +799,128 @@
                 "columns": [
                   {
                     "fieldName": "business_name",
-                    "displayName": "Business Name"
+                    "displayName": "Business Name",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "rung",
-                    "displayName": "Rung"
+                    "displayName": "Rung",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "#,##0",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "lifecycle_state",
-                    "displayName": "Lifecycle State"
+                    "displayName": "Lifecycle State",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "confidence",
-                    "displayName": "Confidence"
+                    "displayName": "Confidence",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "direction_of_travel",
-                    "displayName": "Direction Of Travel"
+                    "displayName": "Direction Of Travel",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "est_paydown_pct",
-                    "displayName": "Est Paydown Pct"
+                    "displayName": "Est Paydown Pct",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "is_eligible_now",
-                    "displayName": "Is Eligible Now"
+                    "displayName": "Is Eligible Now",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "est_renewal_eligible_date",
-                    "displayName": "Est Renewal Eligible Date"
+                    "displayName": "Est Renewal Eligible Date",
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "dateTimeFormat": "YYYY-MM-DD"
                   },
                   {
                     "fieldName": "current_state",
-                    "displayName": "Current State"
+                    "displayName": "Current State",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "active_play",
-                    "displayName": "Active Play"
+                    "displayName": "Active Play",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "play_sla_due",
-                    "displayName": "Play Sla Due"
+                    "displayName": "Play Sla Due",
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "dateTimeFormat": "YYYY-MM-DD"
                   },
                   {
                     "fieldName": "next_tactical_action",
-                    "displayName": "Next Tactical Action"
+                    "displayName": "Next Tactical Action",
+                    "type": "string",
+                    "displayAs": "string"
                   },
                   {
                     "fieldName": "p_alive",
-                    "displayName": "P Alive"
+                    "displayName": "P Alive",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "p_defection",
-                    "displayName": "P Defection"
+                    "displayName": "P Defection",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "predicted_next_event_date",
-                    "displayName": "Predicted Next Event Date"
+                    "displayName": "Predicted Next Event Date",
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "dateTimeFormat": "YYYY-MM-DD"
                   },
                   {
                     "fieldName": "predicted_clv",
-                    "displayName": "Predicted Clv"
+                    "displayName": "Predicted Clv",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "$#,##0",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "prediction_confidence",
-                    "displayName": "Prediction Confidence"
+                    "displayName": "Prediction Confidence",
+                    "type": "decimal",
+                    "displayAs": "number",
+                    "numberFormat": "0.0%",
+                    "alignContent": "right"
                   },
                   {
                     "fieldName": "insufficient_history",
-                    "displayName": "Insufficient History"
+                    "displayName": "Insufficient History",
+                    "type": "string",
+                    "displayAs": "string"
                   }
                 ]
               }

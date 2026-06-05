@@ -105,6 +105,37 @@ def _bar(name, dataset, dim_col, title, x, y, w=4, h=6):
     }
 
 
+# Per-column display kind → verified column attributes + numberFormat (cell formatting).
+# Kinds: pct (0-1 → %), money ($), int, num, date (YYYY-MM-DD), string. Anything unmapped
+# defaults to string.
+COLUMN_KINDS = {
+    "queue_rank": "int", "rung": "int",
+    "confidence": "pct", "prediction_confidence": "pct", "est_paydown_pct": "pct",
+    "p_alive": "pct", "p_defection": "pct", "value_pct": "pct",
+    "predicted_clv": "money", "value_num": "num",
+    "play_sla_due": "date", "est_renewal_eligible_date": "date", "predicted_next_event_date": "date",
+}
+
+
+def _col(c):
+    """A formatted table column spec (verified attributes: type/displayAs/numberFormat/dateTimeFormat)."""
+    kind = COLUMN_KINDS.get(c, "string")
+    base = {"fieldName": c, "displayName": _label(c)}
+    if kind == "pct":
+        base.update({"type": "decimal", "displayAs": "number", "numberFormat": "0.0%", "alignContent": "right"})
+    elif kind == "money":
+        base.update({"type": "decimal", "displayAs": "number", "numberFormat": "$#,##0", "alignContent": "right"})
+    elif kind == "int":
+        base.update({"type": "integer", "displayAs": "number", "numberFormat": "#,##0", "alignContent": "right"})
+    elif kind == "num":
+        base.update({"type": "decimal", "displayAs": "number", "numberFormat": "#,##0.00", "alignContent": "right"})
+    elif kind == "date":
+        base.update({"type": "date", "displayAs": "datetime", "dateTimeFormat": "YYYY-MM-DD"})
+    else:
+        base.update({"type": "string", "displayAs": "string"})
+    return base
+
+
 def _table(name, dataset, cols, title, x, y, w=12, h=12):
     return {
         "widget": {
@@ -115,7 +146,7 @@ def _table(name, dataset, cols, title, x, y, w=12, h=12):
                 "disaggregated": True}}],
             "spec": {"version": 2, "frame": {"showTitle": True, "title": title},
                      "widgetType": "table",
-                     "encodings": {"columns": [{"fieldName": c, "displayName": _label(c)} for c in cols]}},
+                     "encodings": {"columns": [_col(c) for c in cols]}},
         },
         "position": {"x": x, "y": y, "width": w, "height": h},
     }
