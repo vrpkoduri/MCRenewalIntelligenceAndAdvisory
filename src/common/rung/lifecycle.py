@@ -26,16 +26,24 @@ from common import constants as C
 _DORMANCY_MULT = C.Thresholds.DORMANCY_MULTIPLIER  # 2.0 (B.2)
 
 
-def default_subtype(notes: str | None = None, has_default_note: bool = False) -> str:
-    """Defaulted sub-type (Appendix B.2). v1 cannot reliably distinguish true-default vs
-    early-payoff/clawback vs restructured — detection is gated on the data audit and the
-    S7 Data Steward agent. So every default is `unknown` (the conservative interim:
-    do-not-fund + flag for review). Starr ("Defaulted — $250 clawback") -> `unknown`,
-    NOT early-payoff, even though the note mentions a clawback (we never guess).
+def default_subtype(
+    notes: str | None = None,
+    has_default_note: bool = False,
+    resolved_subtype: str | None = None,
+) -> str:
+    """Defaulted sub-type (Appendix B.2). The deterministic spine cannot reliably distinguish
+    true-default vs early-payoff/clawback vs restructured from `notes` alone, so absent a
+    resolved signal every default stays `unknown` (the conservative interim: do-not-fund +
+    review).
 
-    Signature carries `notes`/`has_default_note` so S7 can refine in place without a
-    caller change (the upgrade path); v1 ignores them and returns UNKNOWN.
+    S7 (Data Steward, FU-301): when the agent has resolved a concrete sub-type at sufficient
+    confidence (via `common.agents.apply_default_subtype` → `gold.merchant_extraction`,
+    `review_status='applied'`), the transform passes it in as `resolved_subtype` and it is
+    honored here. The agent EXTRACTS the sub-type; this gate still routes it (Framework §5.9).
+    A null/`unknown`/invalid `resolved_subtype` keeps the conservative default.
     """
+    if resolved_subtype in C.DefaultSubtype.ALL and resolved_subtype != C.DefaultSubtype.UNKNOWN:
+        return resolved_subtype
     return C.DefaultSubtype.UNKNOWN
 
 
@@ -121,7 +129,9 @@ def lifecycle_state(signals: dict) -> dict:
     active_cnt = signals.get("active_position_cnt", 0) or 0
 
     if is_defaulted(has_default):
-        subtype = default_subtype(signals.get("notes"), has_default)
+        subtype = default_subtype(
+            signals.get("notes"), has_default, signals.get("resolved_default_subtype")
+        )
         return {
             "state": C.LifecycleState.DEFAULTED,
             "default_subtype": subtype,

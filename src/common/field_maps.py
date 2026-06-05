@@ -453,6 +453,35 @@ def merchant_predictions_columns() -> list[str]:
     ]
 
 
+# =============================================================================
+# GOLD layer (S7) — Agentic extraction outputs (Framework §5.9). POINT-IN-TIME
+# `merchant_extraction` keyed (merchant_id, deal_id, extraction_run_date, extraction_type),
+# append-only + `_current` view. Source-label convention:
+#   "agent:<...>"   produced by an LLM agent (Data Steward / Statement Analyst) — EXTRACTED
+#   "run:today"     the extraction run date
+# Every row is GROUNDED (source_ref + confidence + model_version) and gated (review_status);
+# the spine consumes APPLIED rows as optional enrichment via the normal re-run — the agent
+# NEVER writes a spine-math column (Framework §5.9). NO SF stored balances.
+# =============================================================================
+
+MERCHANT_EXTRACTION_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "agent:from gold.merchants", Verdict.HAVE, "PK part"),
+    FieldSpec("deal_id", "string", "agent:from gold.deals", Verdict.CARRY, "PK part; deal the extraction attaches to (null for merchant-level)"),
+    FieldSpec("extraction_run_date", "date", "run:today", Verdict.DERIVE, "PK part; point-in-time stamp"),
+    FieldSpec("extraction_type", "enum", "agent:ExtractionType", Verdict.DERIVE, "default_subtype / anomaly_flag / concurrent_positions / weekly_debit / est_weekly_revenue (PK part)"),
+    FieldSpec("value", "string", "agent:extracted value", Verdict.DERIVE, "the extracted value as text (e.g. 'true_default', '3', '5200.00')"),
+    FieldSpec("confidence", "decimal", "agent:model confidence", Verdict.DERIVE, "[0,1]; < AGENT_CONFIDENCE_REVIEW_MIN → review, never auto-applied"),
+    FieldSpec("source_ref", "string", "agent:grounding ref", Verdict.DERIVE, "the source record cited (e.g. silver.deals.notes:OPP-…, statement page) — REQUIRED (ungrounded → rejected)"),
+    FieldSpec("citation", "string", "agent:source snippet", Verdict.DERIVE, "the cited text/snippet the extraction is grounded in"),
+    FieldSpec("model_version", "string", "agent:Foundation Model + ruleset", Verdict.DERIVE, "model/agent version — reproducibility & audit (Event Log contract)"),
+    FieldSpec("review_status", "enum", "agent:grounding gate (D-705)", Verdict.DERIVE, "applied / review / rejected — only `applied` flows to the spine re-run"),
+)
+
+
+def merchant_extraction_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_EXTRACTION_MAP]
+
+
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
 

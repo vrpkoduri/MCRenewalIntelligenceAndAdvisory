@@ -26,6 +26,7 @@ from ..field_maps import (
     MERCHANT_CLOCK_MAP,
     MERCHANT_CROSSWALK_MAP,
     MERCHANT_MAP,
+    MERCHANT_EXTRACTION_MAP,
     MERCHANT_OFFERS_MAP,
     MERCHANT_PREDICTIONS_MAP,
     MERCHANT_RUNG_MAP,
@@ -167,3 +168,12 @@ def merchant_predictions_schema():
         StructField(name, _spark_type(dt), True) for name, dt in GOLD_MERCHANT_PREDICTIONS_DQ_COLUMNS
     ]
     return StructType(fields)
+
+
+def merchant_extraction_schema():
+    """StructType for mca_mri.gold.merchant_extraction (S7 agentic extraction, point-in-time, D-704)."""
+    from pyspark.sql.types import StructField, StructType
+
+    return StructType(
+        [StructField(fs.silver_col, _spark_type(fs.dtype), True) for fs in MERCHANT_EXTRACTION_MAP]
+    )
