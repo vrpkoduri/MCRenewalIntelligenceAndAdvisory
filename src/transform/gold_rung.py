@@ -51,7 +51,7 @@ from common.rung.waterfall import (
 from common.schemas.gold import event_log_schema, merchant_rung_schema
 
 _DEC = "decimal(18,4)"
-_RENEWAL_TYPES = [C.DealType.RENEWAL, C.DealType.BUYOUT]
+_RENEWAL_TYPES = list(C.DealType.REPEAT_TYPES)  # FU-601: incl. Stack / Add-On (all non-New)
 
 # Per-deal static terms the rapid_reup / trajectory UDF needs (ordered by funded_date).
 _DEAL_TERM_FIELDS = (

@@ -54,12 +54,21 @@ class SFObject:
 
 
 class DealType:
-    """SF 'Type' — trusted as the renewal flag (CLAUDE.md 2.5)."""
+    """SF 'Type' — trusted as the renewal flag (CLAUDE.md 2.5). The real funded-book values
+    are New Business / Renewal / Stack / Add-On (FU-601, 2026-06-02 — confirmed via the S6
+    readiness spike: New Business 2,024 / Renewal 1,854 / Stack 67 / Add-On 14; "Buyout" is a
+    valid type that is simply absent in the current book, kept for completeness)."""
 
     NEW = "New Business"
     RENEWAL = "Renewal"
-    BUYOUT = "Buyout"
-    ALL = frozenset({NEW, RENEWAL, BUYOUT})
+    BUYOUT = "Buyout"  # valid type; absent in the current funded book
+    STACK = "Stack"  # an additional (stacking) advance — a repeat event
+    ADD_ON = "Add-On"  # an add-on advance — a repeat event
+    ALL = frozenset({NEW, RENEWAL, BUYOUT, STACK, ADD_ON})
+    # Repeat/stacking advances = every type EXCEPT New Business. The single source for
+    # has_renewal / repeat-event / renewal-chain detection (FU-601 — Stack/Add-On are repeat
+    # advances, not new business; they were previously missed by a literal {Renewal, Buyout}).
+    REPEAT_TYPES = frozenset({RENEWAL, BUYOUT, STACK, ADD_ON})
 
 
 class PaymentFrequency:
