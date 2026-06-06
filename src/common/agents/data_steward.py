@@ -25,7 +25,11 @@ from common.agents.grounding import make_extraction
 # Default Foundation Model endpoint (verified provisioned in-workspace) + a version string that
 # stamps every extraction for audit/reproducibility (Event Log contract; make_extraction requires it).
 DEFAULT_ENDPOINT = "databricks-claude-sonnet-4-5"
-MODEL_VERSION = "data-steward/claude-sonnet-4-5/v1"
+# v2 (D-706): an explicit "defaulted" in the Notes now OVERRIDES a clawback mention — a clawback
+# on a defaulted deal is the funder reclaiming the broker's commission (a loss → true_default),
+# NOT a healthy early payoff. The v1 prompt mis-read Starr/Sai ("Defaulted / $N clawback") as
+# early_payoff; the labeled-sample pass corrected it. Version bump = prompt/ruleset change (audit).
+MODEL_VERSION = "data-steward/claude-sonnet-4-5/v2"
 
 # The four labels the model may return (mirrors DefaultSubtype; normalize_subtype_label maps
 # synonyms, but we constrain the model to these to keep parsing tight).
@@ -40,11 +44,15 @@ _SYSTEM = (
     "Categories:\n"
     "- true_default: the merchant failed to repay — uncollectable, charged off, written off, "
     "bankruptcy, stopped paying with a loss to the funder.\n"
-    "- early_payoff: the merchant repaid early / in full / prepaid, or a commission clawback due "
-    "to early payoff. This is a HEALTHY exit, not a loss.\n"
+    "- early_payoff: the merchant repaid early / in full / prepaid — a HEALTHY exit, not a loss.\n"
     "- restructured: the balance was modified, settled, or a workout / revised payment plan was "
     "agreed.\n"
     "- unknown: the Notes do not clearly state a cause.\n\n"
+    "IMPORTANT — clawbacks: a 'clawback' is NOT by itself an early payoff. If the Notes state the "
+    "merchant 'defaulted' / 'default' (even alongside a '$N clawback'), classify true_default — a "
+    "clawback on a defaulted deal is the funder reclaiming the broker's commission, i.e. a loss. "
+    "Classify early_payoff ONLY when the Notes indicate a healthy early/full repayment with NO "
+    "default mentioned.\n\n"
     "Respond with ONLY a JSON object and no other text:\n"
     "{\"label\": \"<one category>\", \"confidence\": <number 0..1>, "
     "\"citation\": \"<verbatim snippet from the Notes that justifies the label, or null>\"}"

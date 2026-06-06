@@ -32,6 +32,32 @@ from transform.gold_rung import build_gold_rung
 
 STARR = "Starr Window Tinting"
 
+# --- D-706 hand-labeled sample (ground truth) ------------------------------------
+# The 6 closed_default deals' default-cause, adjudicated by the operator (C-024):
+# - an explicit "defaulted" note = true_default (a default IS a loss; early_payoff/restructured are
+#   the exceptions that require positive evidence) — incl. a bare "defaulted" with no further detail;
+# - a clawback-on-a-defaulted-deal = true_default (funder reclaiming commission, NOT an early payoff);
+# - a note with no default-cause signal at all = unknown (the agent MUST abstain, not guess).
+# `label` = the DefaultSubtype the agent's APPLIED `value` must equal; `unknown` ⇒ stay unknown/review.
+# This is the accuracy bar that gates PROD promotion (D-706).
+DEFAULT_SUBTYPE_LABELS = {
+    "0065e00000LjHEUAA3": {"merchant": "Ab Powers", "label": "true_default",
+                           "rationale": "note 'defaulted' — an explicit default is a true default"},
+    "006UU00000Ar36sYAB": {"merchant": "Con Alma", "label": "true_default",
+                           "rationale": "note 'defaulted' — explicit default = true default"},
+    "006UU000006as3FYAQ": {"merchant": "Luxury Dentistry", "label": "true_default",
+                           "rationale": "'Default on forward' — true default"},
+    "006UU00000FHcTPYA1": {"merchant": "Sai Adjustments", "label": "true_default",
+                           "rationale": "'Defaulted' + clawback = default-triggered commission clawback"},
+    "006UU00000IsAWIYA3": {"merchant": "Starr Window Tinting", "label": "true_default",
+                           "rationale": "framework fixture + 'Defaulted' + clawback = true default"},
+    "006UU00000BEK3lYAH": {"merchant": "Zeek Interactive", "label": "unknown",
+                           "rationale": "no default-cause signal in the note ('mtd, ar, 110K transfer') — abstain"},
+}
+# Calibrated on this first 6-deal sample (D-706 "sane + improving"): the v2 prompt fix should
+# clear it. A miss on a tiny curated sample is a real regression → gate PROD.
+ACCURACY_BAR = 0.80
+
 
 def run_recon(spark, catalog=C.CATALOG, schema=C.Schema.GOLD_TEST, run_date=None, allow_prod=False,
               predict_fn=None, rerun_s3=True) -> dict:
@@ -109,6 +135,40 @@ def run_recon(spark, catalog=C.CATALOG, schema=C.Schema.GOLD_TEST, run_date=None
         .groupBy("value").agg(F.count(F.lit(1)).alias("n")).collect()
     }
 
+    # === D-706 accuracy: score the extractions against the hand-labeled ground truth ===
+    label_rows = {
+        r["deal_id"]: r for r in ext.select("deal_id", "value", "review_status").collect()
+    }
+    labeled_results = []
+    correct = 0
+    for deal_id, truth in DEFAULT_SUBTYPE_LABELS.items():
+        got = label_rows.get(deal_id)
+        agent_value = got["value"] if got else None
+        agent_status = got["review_status"] if got else None
+        expected = truth["label"]
+        if expected == C.DefaultSubtype.UNKNOWN:
+            # the agent must abstain: stay unknown and NOT applied
+            ok = agent_value == C.DefaultSubtype.UNKNOWN and agent_status != C.ReviewStatus.APPLIED
+        else:
+            # the agent must resolve to exactly the labeled sub-type AND apply it
+            ok = agent_value == expected and agent_status == C.ReviewStatus.APPLIED
+        correct += int(ok)
+        labeled_results.append({
+            "merchant": truth["merchant"], "deal_id": deal_id, "expected": expected,
+            "agent_value": agent_value, "review_status": agent_status, "correct": ok,
+        })
+    n = len(DEFAULT_SUBTYPE_LABELS)
+    findings["labeled_n"] = n
+    findings["labeled_correct"] = correct
+    findings["labeled_accuracy"] = round(correct / n, 4) if n else None
+    findings["labeled_results"] = labeled_results
+    findings["accuracy_bar"] = ACCURACY_BAR
+    # specific regression guard: no labeled true_default may be APPLIED as early_payoff (Starr/Sai)
+    findings["true_default_misrouted_as_early_payoff"] = [
+        r["merchant"] for r in labeled_results
+        if r["expected"] == C.DefaultSubtype.TRUE_DEFAULT and r["agent_value"] == C.DefaultSubtype.EARLY_PAYOFF
+    ]
+
     # === re-run S3 so the recon shows the routing effect of the resolved sub-types ===
     if rerun_s3:
         rung_targets = build_gold_rung(spark, catalog=catalog, schema=schema, run_date=run_date, allow_prod=allow_prod)
@@ -173,4 +233,15 @@ def assert_recon(findings: dict) -> list[str]:
     # an extraction run with closed_default deals must emit agent_extraction events
     if findings.get("closed_default_deal_universe", 0) > 0 and findings.get("agent_extraction_events", 0) == 0:
         failures.append("no agent_extraction events emitted despite closed_default deals")
+    # D-706 accuracy gate (gates PROD promotion)
+    acc = findings.get("labeled_accuracy")
+    if acc is not None and acc < findings.get("accuracy_bar", ACCURACY_BAR):
+        failures.append(
+            f"D-706 accuracy {acc} < bar {findings.get('accuracy_bar', ACCURACY_BAR)}: "
+            f"{findings.get('labeled_results')}"
+        )
+    if findings.get("true_default_misrouted_as_early_payoff"):
+        failures.append(
+            f"true_default misrouted as early_payoff: {findings.get('true_default_misrouted_as_early_payoff')}"
+        )
     return failures
