@@ -105,18 +105,22 @@ Medallion layers in Unity Catalog: `mri.bronze.*`, `mri.silver.*`, `mri.gold.*`.
 
 ## 7. Build order & current status
 
+**Living status is `docs/SPRINT_TRACKER.md` (authoritative, C-008).** Snapshot (2026-06-05):
+
 | Sprint | Block | Status |
 |---|---|---|
-| **S0** | Ingestion → silver | **CURRENT** — see `SPRINT_0.md` |
-| S1 | Identity + Deal table | next |
-| S2 | Features + clock (Appendix A) | |
-| S3 | Rung classifier + state machine + event log (Appendix B) | |
-| S4 | Activation + Book Health | |
-| S5 | Offer Engine | |
-| S6 | Prediction | |
-| S7 | Agentic extraction (Statement Analyst + Data Steward) | |
-| S8 | Advisory comms + agents (Composer, Structure Advisor) + compliance | |
+| S0 | Ingestion → silver | ✅ PROD |
+| S1 | Identity + Deal table | ✅ PROD `gold` |
+| S2 | Features + clock (Appendix A) | ✅ PROD `gold` |
+| S3 | Rung classifier + state machine + event log (Appendix B) | ✅ PROD `gold` |
+| S4 | Activation + Book Health | ✅ PROD `gold` |
+| S5 | Offer Engine | ◑ offline built (gated on FU-501 handoff contract) |
+| S6 | Prediction | ✅ PROD `gold` (lifetimes v1; FU-602 Bayesian upgrade open) |
+| S7 | Agentic extraction — Phase 1 Data Steward | ✅ **PROD `gold` (D-706 6/6, C-024)**; Phase 2 Statement Analyst deferred (D-702) |
+| S8 | Advisory comms + agents (Composer, Structure Advisor) + compliance | next major sprint |
 | S9+ | Merchant app | |
+
+Activation surface: a read-only Lakeview dashboard over PROD `gold` (C-021) instead of the SF write-back (FU-401 deferred).
 
 **Gates before S0 coding:** G1 data audit (in progress), G2 clock math (RESOLVED — Appendix A), G3 rung rules (RESOLVED — Appendix B), G4 environment + data-rights (confirm).
 
@@ -126,7 +130,7 @@ Medallion layers in Unity Catalog: `mri.bronze.*`, `mri.silver.*`, `mri.gold.*`.
 
 | Merchant | Shape | Expected classification |
 |---|---|---|
-| Starr Window Tinting | FICO 520, Position 4, defaulted ($250 clawback) | Defaulted → sub-type (do-not-fund + review) |
+| Starr Window Tinting | FICO 520, Position 4, defaulted ($250 clawback) | Defaulted → S7 Data Steward sub-typed `true_default` → distressed-exit (C-024; the "$250 clawback" on a *defaulted* deal = funder commission reclaim = a loss, NOT an early payoff) |
 | One Big Promotion | Paid 100%, single deal, quiet since 2020 | Dormant → win-back |
 | Tom Snell | 1 fresh deal, clean, full docs, no history | New/establishing → healthy clock-running |
 | Wolf Corporation | Renewed ~14 days in, $30k→$40k upsizing | Serial (rapid re-up) → renewal-vs-buyout eval |

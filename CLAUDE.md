@@ -9,6 +9,7 @@ Companion docs (authoritative; in `docs/`):
 - `GENERAL_INSTRUCTIONS.md` — the binding working rules (plan-first, SDLC, shared components, testing, ask-before-deploy, best-practice, docs)
 
 Living operational state:
+- `docs/SESSION_HANDOFF.md` — **start here**: where we are, what shipped last, recommended next steps
 - `docs/SPRINT_TRACKER.md` — current sprint status + test results
 - `docs/DECISIONS.md` — signed-off + open decisions
 
