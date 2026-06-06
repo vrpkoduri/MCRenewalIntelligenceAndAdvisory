@@ -183,8 +183,10 @@ class EventType:
     PLAY_FIRED = "play_fired"  # a named play assigned/changed for a merchant (S4 activation)
     OFFER_COMPUTED = "offer_computed"  # a proactive offer scan produced/changed options (S5)
     PREDICTION = "prediction"  # a model inference produced/updated predictions for a merchant (S6)
+    AGENT_EXTRACTION = "agent_extraction"  # an agent extracted a grounded signal from source (S7)
     ALL = frozenset(
-        {CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED, OFFER_COMPUTED, PREDICTION}
+        {CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED, OFFER_COMPUTED, PREDICTION,
+         AGENT_EXTRACTION}
     )
 
 
@@ -360,6 +362,38 @@ COX_COVARIATES = (
 )
 
 
+# --- Agentic Extraction (Framework §5.9, S7 / C-022) -----------------------------
+# Agents EXTRACT (read messy inputs); the deterministic spine still COMPUTES. Outputs are
+# grounded (source_ref + confidence) + logged; low-confidence routes to human review, never
+# auto-applied. The deterministic mappers/validators below are pure (tier-1 testable) — the
+# correctness-critical tools the LLM agents call. NO agent writes a spine-math column.
+
+
+class ExtractionType:
+    """What an agent extraction asserts (Data Steward = Phase 1; Statement Analyst = Phase 2)."""
+
+    DEFAULT_SUBTYPE = "default_subtype"  # Data Steward: true-default / early-payoff / restructured
+    ANOMALY_FLAG = "anomaly_flag"  # Data Steward: date contradiction / data anomaly for review
+    CONCURRENT_POSITIONS = "concurrent_positions"  # Statement Analyst (Phase 2): true position count
+    WEEKLY_DEBIT = "weekly_debit"  # Statement Analyst (Phase 2): total weekly burden incl. other funders
+    EST_WEEKLY_REVENUE = "est_weekly_revenue"  # Statement Analyst (Phase 2): real deposits/revenue
+    ALL = frozenset({DEFAULT_SUBTYPE, ANOMALY_FLAG, CONCURRENT_POSITIONS, WEEKLY_DEBIT, EST_WEEKLY_REVENUE})
+
+
+class ReviewStatus:
+    """Grounding gate (D-705). High-confidence grounded extractions are APPLIED (flow to the
+    spine re-run); low-confidence / invalid go to REVIEW (never auto-applied)."""
+
+    APPLIED = "applied"
+    REVIEW = "review"  # below the confidence threshold or failed validation — needs a human
+    REJECTED = "rejected"  # ungrounded (missing source_ref) — not usable
+    ALL = frozenset({APPLIED, REVIEW, REJECTED})
+
+
+# Minimum agent confidence to auto-APPLY an extraction (D-705); below → human review.
+AGENT_CONFIDENCE_REVIEW_MIN = 0.70
+
+
 class Verdict:
     """Data Contract availability verdicts."""
 
@@ -456,6 +490,11 @@ class GoldTable:
     # inference (D-605); models adopted (PyMC-Marketing + lifelines), MLflow-versioned.
     MERCHANT_PREDICTIONS = "merchant_predictions"
     MERCHANT_PREDICTIONS_CURRENT = "merchant_predictions_current"
+    # S7 Agentic extraction (Framework §5.9) — point-in-time `merchant_extraction` (+`_current`):
+    # grounded agent outputs (default_subtype, positions, burden, …) the spine consumes as
+    # optional enrichment via the normal re-run. The agent never writes spine tables.
+    MERCHANT_EXTRACTION = "merchant_extraction"
+    MERCHANT_EXTRACTION_CURRENT = "merchant_extraction_current"
     BOOK_HEALTH = "book_health"
     BOOK_HEALTH_CURRENT = "book_health_current"
     RENEWAL_PERFORMANCE_CURRENT = "renewal_performance_current"

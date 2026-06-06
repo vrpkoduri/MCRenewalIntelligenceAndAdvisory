@@ -89,6 +89,22 @@ D-601…D-609 signed 2026-06-02 (C-020); **pure modules built + tier-1 green (28
 
 Reuses existing `Thresholds` + the deal history / event log (no duplicate numbers — Rule 3). `constants` adds the CLV horizon/discount + `INSUFFICIENT_HISTORY_MIN_EVENTS` + `COX_COVARIATES` (calibration home). Consumed by `transform/gold_predictions.py` (**build pending — gated**) writing point-in-time `gold.merchant_predictions` (+`_current`) + `prediction` events, MLflow-versioned (`model_version`).
 
+## Built (Sprint 7 — agentic extraction deterministic tools, §5.9)
+
+D-701…D-706 signed 2026-06-05 (C-022); **Phase-1 deterministic foundation built + tier-1 green (297 tier-1).** Framework §5.9 — agents EXTRACT, the spine COMPUTES; these pure tools are what the LLM agent calls (the LLM layer in `agents/` + the cloud run are gated). Pure / no-LLM-at-import.
+
+| Component | Path | Contract / purpose |
+|---|---|---|
+| `agents.default_subtype` | `src/common/agents/default_subtype.py` | Data Steward tool: `normalize_subtype_label` (free-text → DefaultSubtype) + `apply_default_subtype` (confidence gate → concrete sub-type APPLIED only ≥ threshold, else conservative `unknown`+REVIEW; routes via S3 `route_for_default`). |
+| `agents.grounding` | `src/common/agents/grounding.py` | The extraction contract: `make_extraction` (grounded row), `review_status` (APPLIED/REVIEW/REJECTED — ungrounded→rejected, requires model_version), `is_applicable`. |
+| `agents.data_steward` | `src/common/agents/data_steward.py` | The fuzzy half (Spark-free, injected `predict_fn`): `build_messages` (grounded prompt), `parse_response` (tolerant/defensive — malformed/OOV→unknown, conf clamped), `classify_default_cause`, and `build_extraction_rows` (the pure agent→gate→ground orchestration — lives here per Rule 3; the transform is a thin wrapper). |
+| `transform.gold_extraction` (S7 driver) | `src/transform/gold_extraction.py` | Thin Spark wrapper: `closed_default_deals` source, `databricks_chat_predict_fn` (Foundation Model via `databricks-sdk` serving client), writes point-in-time `gold.merchant_extraction` (+`_current`) + delete-then-append `agent_extraction` events. |
+| `eventlog.events` (+S7) | `src/common/eventlog/events.py` | `agent_extraction_event` (timeline marker; full detail lives in `merchant_extraction`). |
+| `rung.lifecycle` (+S7) | `src/common/rung/lifecycle.py` | `default_subtype`/`lifecycle_state` now honor a `resolved_default_subtype` signal (agent extracts, gate routes) — backward-compatible. |
+| `schemas.gold` (+S7) | `src/common/schemas/gold.py` | `merchant_extraction_schema()` (point-in-time, grounded). |
+
+Reuses S3 `route_for_default` (no duplicate routing — Rule 3). `constants` adds `ExtractionType`/`ReviewStatus`/`EventType.AGENT_EXTRACTION`/`AGENT_CONFIDENCE_REVIEW_MIN`. Consumed by the **Data Steward LLM agent + `transform/gold_extraction.py`** (build gated) writing `gold.merchant_extraction`; the spine re-run reads APPLIED extractions as optional enrichment — the agent never writes spine tables.
+
 ## Principles
 
 - **Schema is derived from / validated against the Data Contract xlsx** — never a parallel hand-maintained copy.
