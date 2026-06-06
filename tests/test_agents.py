@@ -14,11 +14,14 @@ import pytest
 from common import constants as C
 from common.agents import (
     apply_default_subtype,
+    classify_default_cause,
     is_applicable,
     make_extraction,
     normalize_subtype_label,
+    parse_response,
     review_status,
 )
+from common.agents.data_steward import ALLOWED_LABELS, build_extraction_rows
 from common.field_maps import MERCHANT_EXTRACTION_MAP, merchant_extraction_columns
 from common.io.guards import offending_surface_columns
 from common.rung.lifecycle import default_subtype, lifecycle_state
@@ -122,6 +125,84 @@ def test_lifecycle_gate_routes_resolved_default():
     # unresolved -> conservative do-not-fund (today's behavior, unchanged)
     out2 = lifecycle_state({"has_default_note": True})
     assert out2["default_subtype"] == _DS.UNKNOWN and out2["route"] == C.LifecycleRoute.DO_NOT_FUND
+
+
+# =============================================================================
+# Data Steward LLM agent — prompt parse + offline orchestration (no network)
+# =============================================================================
+
+
+def test_parse_response_clean_and_wrapped_json():
+    r = parse_response('{"label": "true_default", "confidence": 0.92, "citation": "charged off"}')
+    assert r == {"label": "true_default", "confidence": 0.92, "citation": "charged off"}
+    # tolerant: a prose-wrapped JSON object is still extracted
+    r2 = parse_response('Here is my answer:\n{"label":"early_payoff","confidence":0.8,"citation":null}\nThanks')
+    assert r2["label"] == "early_payoff" and r2["citation"] is None
+
+
+def test_parse_response_defensive_unknown_and_clamp():
+    # malformed -> unknown/0.0 (a hallucination can never look confident)
+    assert parse_response("not json at all") == {"label": "unknown", "confidence": 0.0, "citation": None}
+    assert parse_response("") == {"label": "unknown", "confidence": 0.0, "citation": None}
+    # out-of-vocabulary label -> unknown (never guessed into a real category)
+    oov = parse_response('{"label": "merchant_died", "confidence": 0.99}')
+    assert oov["label"] == "unknown"
+    # confidence clamped to [0,1]
+    assert parse_response('{"label":"true_default","confidence":1.7}')["confidence"] == 1.0
+    assert parse_response('{"label":"true_default","confidence":-3}')["confidence"] == 0.0
+    # every allowed label round-trips
+    for lab in ALLOWED_LABELS:
+        assert parse_response(f'{{"label":"{lab}","confidence":0.5}}')["label"] == lab
+
+
+def test_classify_default_cause_calls_model_and_short_circuits_blank():
+    calls = []
+
+    def fake_predict(endpoint, messages, max_tokens=300):
+        calls.append((endpoint, messages))
+        return '{"label": "true_default", "confidence": 0.9, "citation": "wrote off balance"}'
+
+    out = classify_default_cause("Acct charged off; uncollectable.", fake_predict)
+    assert out["label"] == "true_default" and out["confidence"] == 0.9
+    assert len(calls) == 1 and calls[0][1][0]["role"] == "system"  # grounded system prompt sent
+    # blank / missing notes never call the model (nothing to ground on) -> unknown
+    assert classify_default_cause("   ", fake_predict)["label"] == "unknown"
+    assert classify_default_cause(None, fake_predict)["label"] == "unknown"
+    assert len(calls) == 1
+
+
+def _fake_for(label, conf, citation="cited snippet"):
+    payload = f'{{"label": "{label}", "confidence": {conf}, "citation": "{citation}"}}'
+    return lambda endpoint, messages, max_tokens=300: payload
+
+
+def test_build_extraction_rows_applies_grounds_and_routes():
+    rows = build_extraction_rows(
+        [{"merchant_id": "M1", "deal_id": "OPP-1", "notes": "charged off, uncollectable"}],
+        RUN, _fake_for("true_default", 0.95), model_version="ds-test/v1",
+    )
+    e = rows[0]
+    assert e["value"] == _DS.TRUE_DEFAULT and e["review_status"] == C.ReviewStatus.APPLIED
+    assert e["source_ref"] == "silver.deals.notes:OPP-1" and e["model_version"] == "ds-test/v1"
+    # the event-log enrichment carries the resolved route only when APPLIED
+    assert e["default_subtype"] == _DS.TRUE_DEFAULT and e["route"] == C.LifecycleRoute.DISTRESSED_EXIT
+    assert is_applicable(e) and set(merchant_extraction_columns()).issubset(e.keys())
+
+
+def test_build_extraction_rows_low_confidence_reviews_and_no_notes_rejected():
+    # grounded but low-confidence -> REVIEW, conservative (no resolved route surfaced)
+    low = build_extraction_rows(
+        [{"merchant_id": "M1", "deal_id": "OPP-1", "notes": "maybe early payoff?"}],
+        RUN, _fake_for("early_payoff", 0.4),
+    )[0]
+    assert low["review_status"] == C.ReviewStatus.REVIEW and low["default_subtype"] is None
+    # no notes -> agent short-circuits unknown AND ungrounded (no source_ref) -> REJECTED
+    none = build_extraction_rows(
+        [{"merchant_id": "M2", "deal_id": "OPP-2", "notes": None}],
+        RUN, _fake_for("true_default", 0.99),
+    )[0]
+    assert none["review_status"] == C.ReviewStatus.REJECTED and not is_applicable(none)
+    assert none["source_ref"] is None
 
 
 # =============================================================================

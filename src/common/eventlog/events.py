@@ -178,6 +178,32 @@ def play_fired_event(
     return row
 
 
+def agent_extraction_event(
+    merchant_id: str, extraction_run_date, extraction: dict, event_ts
+) -> dict:
+    """An `agent_extraction` event (S7) — a timeline marker that the Data Steward (or, later,
+    the Statement Analyst) recorded a grounded extraction. The FULL audit detail (value,
+    source_ref, citation, model_version, review_status) lives in the durable
+    `gold.merchant_extraction` table — analogous to how merchant_rung IS the classification
+    history. Here we surface the floor-queue-relevant fields on the wide log: the resolved
+    `default_subtype` + `route` (for a DEFAULT_SUBTYPE extraction) and `confidence`. Append-only.
+    `extraction` is the make_extraction row enriched with the gate's resolved default_subtype/
+    route (null for non-default-subtype extractions)."""
+    row = _base_row(merchant_id, C.EventType.AGENT_EXTRACTION, event_ts, extraction_run_date)
+    row.update(
+        {
+            "default_subtype": extraction.get("default_subtype"),
+            "route": extraction.get("route"),
+            "confidence": extraction.get("confidence"),
+            # repurpose transition_field to record WHICH extraction this marks + its disposition
+            "transition_field": (
+                f"{extraction.get('extraction_type')}:{extraction.get('review_status')}"
+            ),
+        }
+    )
+    return row
+
+
 def build_activation_events(
     merchant_id: str, activation_run_date, activation: dict, event_ts, prev: dict | None = None
 ) -> list[dict]:

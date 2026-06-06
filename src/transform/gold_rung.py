@@ -147,6 +147,46 @@ def _classify_udf():
 
 # --- signal assembly -------------------------------------------------------------
 
+# Severity order for rolling a merchant's APPLIED default-cause extractions up to one
+# resolved sub-type (the most severe wins, mirroring "closed_default dominates"): a confirmed
+# true-default outranks a restructured outranks an early-payoff.
+_SUBTYPE_SEVERITY = {
+    C.DefaultSubtype.TRUE_DEFAULT: 0,
+    C.DefaultSubtype.RESTRUCTURED: 1,
+    C.DefaultSubtype.EARLY_PAYOFF: 2,
+}
+
+
+def _resolved_default_subtypes(
+    spark: SparkSession, catalog: str, schema: str
+) -> DataFrame | None:
+    """(merchant_id, resolved_default_subtype) from the Data Steward's APPLIED default-cause
+    extractions (S7), rolled up to one sub-type per merchant by severity. Returns None when the
+    extraction table doesn't exist yet — so S3 is fully backward-compatible (the agent is optional
+    enrichment; absent it, defaults stay the conservative `unknown` → do-not-fund)."""
+    target = C.fq(schema, C.GoldTable.MERCHANT_EXTRACTION_CURRENT, catalog)
+    if not spark.catalog.tableExists(target):
+        return None
+    ext = (
+        spark.read.table(target)
+        .where(
+            (F.col("extraction_type") == F.lit(C.ExtractionType.DEFAULT_SUBTYPE))
+            & (F.col("review_status") == F.lit(C.ReviewStatus.APPLIED))
+            & F.col("value").isin(list(_SUBTYPE_SEVERITY.keys()))
+        )
+        .select("merchant_id", F.col("value").alias("resolved_default_subtype"))
+    )
+    sev = F.create_map(
+        *sum(([F.lit(k), F.lit(v)] for k, v in _SUBTYPE_SEVERITY.items()), [])
+    )
+    ext = ext.withColumn("_sev", sev[F.col("resolved_default_subtype")])
+    w = Window.partitionBy("merchant_id").orderBy(F.col("_sev").asc())
+    return (
+        ext.withColumn("_rn", F.row_number().over(w))
+        .where(F.col("_rn") == 1)
+        .select("merchant_id", "resolved_default_subtype")
+    )
+
 
 def compute_merchant_signals(
     spark: SparkSession, catalog: str, schema: str, run_date: date
@@ -241,6 +281,14 @@ def compute_merchant_signals(
         .join(own_median, "merchant_id", "left")
     )
 
+    # S7 (optional): the Data Steward's APPLIED default-cause sub-type per merchant. Absent the
+    # extraction table this is null → lifecycle keeps the conservative `unknown` → do-not-fund.
+    resolved = _resolved_default_subtypes(spark, catalog, schema)
+    if resolved is not None:
+        sig = sig.join(resolved, "merchant_id", "left")
+    else:
+        sig = sig.withColumn("resolved_default_subtype", F.lit(None).cast("string"))
+
     sig = sig.withColumn(
         "has_default_note", F.coalesce(F.col("has_default_note"), F.lit(False))
     )
@@ -291,6 +339,7 @@ _SIGNAL_COLS = (
     "relative_burden_falling",
     "graduate_qualified",
     "clean_payments",
+    "resolved_default_subtype",  # S7: the Data Steward's APPLIED default-cause sub-type (or null)
 )
 
 
