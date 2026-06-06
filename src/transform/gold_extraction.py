@@ -44,18 +44,25 @@ _S7_EVENT_TYPES = (C.EventType.AGENT_EXTRACTION,)
 
 def databricks_chat_predict_fn():
     """A `predict_fn(endpoint, messages, max_tokens)` that calls a Databricks Foundation Model
-    chat endpoint via the MLflow deployments client (works on serverless + classic, nothing to
-    provision). temperature=0 for reproducibility — the extraction is an audit record."""
-    from mlflow.deployments import get_deploy_client
+    chat endpoint via the Databricks SDK (`databricks-sdk` is preinstalled on serverless +
+    classic runtimes — no `mlflow` / provisioning needed). temperature=0 for reproducibility —
+    the extraction is an audit record."""
+    from databricks.sdk import WorkspaceClient
+    from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
-    client = get_deploy_client("databricks")
+    w = WorkspaceClient()
+    _ROLE = {
+        "system": ChatMessageRole.SYSTEM,
+        "user": ChatMessageRole.USER,
+        "assistant": ChatMessageRole.ASSISTANT,
+    }
 
     def _fn(endpoint, messages, max_tokens=300):
-        resp = client.predict(
-            endpoint=endpoint,
-            inputs={"messages": messages, "max_tokens": max_tokens, "temperature": 0.0},
+        chat = [ChatMessage(role=_ROLE[m["role"]], content=m["content"]) for m in messages]
+        resp = w.serving_endpoints.query(
+            name=endpoint, messages=chat, max_tokens=max_tokens, temperature=0.0
         )
-        return resp["choices"][0]["message"]["content"]
+        return resp.choices[0].message.content
 
     return _fn
 

@@ -461,7 +461,16 @@ def compute_event_log(
     else:
         events = classification
 
-    return events.select(*[f.name for f in event_log_schema().fields])
+    # Null-fill any wide-log columns this event type doesn't use (e.g. the S4 current_state /
+    # active_play axes) before projecting to the shared schema — so S3 stays robust as later
+    # sprints widen EVENT_LOG_COLUMNS (FU-701: previously this select threw UNRESOLVED_COLUMN
+    # once S4 added its columns and S3 was re-run).
+    schema = event_log_schema()
+    present = set(events.columns)
+    for f in schema.fields:
+        if f.name not in present:
+            events = events.withColumn(f.name, F.lit(None).cast(f.dataType))
+    return events.select(*[f.name for f in schema.fields])
 
 
 def _write_point_in_time(df: DataFrame, target: str, run_date: date, spark: SparkSession) -> None:

@@ -129,7 +129,7 @@ def run_recon(spark, catalog=C.CATALOG, schema=C.Schema.GOLD_TEST, run_date=None
         }
         starr = (
             defaulted.join(merchants, "merchant_id", "inner")
-            .where(F.col("business_name") == F.lit(STARR))
+            .where(F.col("business_name").startswith(STARR))  # gold name carries a legal suffix ("... Llc")
             .select("business_name", "lifecycle_state", "default_subtype", "route", "confidence")
             .collect()
         )
