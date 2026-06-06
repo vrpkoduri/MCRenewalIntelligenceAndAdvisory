@@ -91,7 +91,7 @@ Reuses existing `Thresholds` + the deal history / event log (no duplicate number
 
 ## Built (Sprint 7 — agentic extraction deterministic tools, §5.9)
 
-D-701…D-706 signed 2026-06-05 (C-022); **Phase-1 deterministic foundation built + tier-1 green (297 tier-1).** Framework §5.9 — agents EXTRACT, the spine COMPUTES; these pure tools are what the LLM agent calls (the LLM layer in `agents/` + the cloud run are gated). Pure / no-LLM-at-import.
+D-701…D-706 signed 2026-06-05 (C-022); **Phase-1 Data Steward in PROD `gold` — D-706 labeled accuracy 6/6, `failures: []` (C-024); 302 tier-1 green.** Framework §5.9 — agents EXTRACT, the spine COMPUTES; these pure tools are what the LLM agent (`common/agents/data_steward.py` + `transform/gold_extraction.py`) calls. Pure / no-LLM-at-import.
 
 | Component | Path | Contract / purpose |
 |---|---|---|

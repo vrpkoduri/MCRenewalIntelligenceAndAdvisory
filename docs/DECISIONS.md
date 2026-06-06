@@ -128,7 +128,7 @@ Append-only record of decisions you've signed off on, and open decisions awaitin
 | D-705 | 2026-06-05 | **Guardrails / grounding / human-review.** | Every extraction grounded (source_ref + citation + confidence); `< AGENT_CONFIDENCE_REVIEW_MIN` → human-review queue, never auto-applied; agents call deterministic tools for all counting/classification; full event-log audit incl. model_version. Confirm the threshold. |
 | D-706 | 2026-06-05 | **Accuracy bar + labeled sample.** | Hand-label a sample (the four merchants + N more) for default sub-type + statement positions; "sane + improving" acceptance (sub-type accuracy ≥ X%; positions within ±1), calibrated on the first sample. Confirm the approach. |
 
-**D-701…D-706 approved 2026-06-05 — see C-022.** Building Phase 1 (Data Steward): offline deterministic foundation (`common/agents` + schema/maps + lifecycle wiring) first; the LLM agent (Foundation Models) + `gold_test` run are the gated next step (spend approved). Phase 2 (Statement Analyst) deferred — statements confirmed in SF (D-702 ingestion spike at Phase 2 start).
+**D-701…D-706 approved 2026-06-05 — see C-022.** **DONE → in PROD `gold` (C-023 run, C-024 D-706 PASS 6/6).** Phase 1 (Data Steward) shipped: offline deterministic foundation → LLM agent (Foundation Models) → `gold_test` run → D-706 labeled-sample accuracy gate → PROD promotion. Phase 2 (Statement Analyst) deferred — statements confirmed in SF (D-702 ingestion spike at Phase 2 start).
 
 ## Resolved (was open)
 
