@@ -393,6 +393,22 @@ class ReviewStatus:
 # Minimum agent confidence to auto-APPLY an extraction (D-705); below → human review.
 AGENT_CONFIDENCE_REVIEW_MIN = 0.70
 
+# --- Statement Analyst (S7 Phase 2 / C-026) --------------------------------------
+# Funding-moment statements are point-in-time; the clock is live-recompute (#2). A statement
+# older than this (statement `as_of_date` vs the run date) is NOT surfaced as current truth —
+# the extraction is recorded but gated to REVIEW so a stale snapshot never leaks into a live
+# burden read. Calibratable. **Operator-confirmed 180d (2026-06-09)** after the age-distribution
+# probe (covered-statement median age 333d): the strict window surfaces 18 of 79 covered deals as
+# current; the other 61 are recorded + flagged stale (REVIEW). Honesty over pilot breadth — and the
+# go-forward stream (new fundings) surfaces inside the window naturally.
+STATEMENT_FRESHNESS_MAX_DAYS = 180
+
+# `est_weekly_revenue` (the burden_ratio denominator) is the softest signal — deposits ≠ revenue
+# (transfers / loan proceeds / owner injections inflate it), so the agent classifies only
+# operating-revenue deposits AND its confidence is haircut here before the D-705 gate (#3). So a
+# revenue read is more likely to land in REVIEW than the positions/debit reads. Calibratable.
+STATEMENT_REVENUE_CONFIDENCE_HAIRCUT = 0.85
+
 
 class Verdict:
     """Data Contract availability verdicts."""

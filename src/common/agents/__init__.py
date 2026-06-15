@@ -11,8 +11,11 @@ correct + auditable, and the spine still COMPUTES. NO LLM at import; NO spine re
     (predict_fn) so this stays import-clean + tier-1 testable; the Spark driver supplies the
     real Databricks client.
 
-The Statement Analyst's deterministic position/burden counter (Phase 2) lands here as
-`positions.py` when statement ingestion is wired (D-702).
+  - positions:       Statement Analyst (Phase 2) — count the true concurrent positions, sum the
+    weekly debit burden, and normalize deposits to weekly revenue from the agent's classified
+    statement streams (the inputs the S2 clock consumes for `burden_ratio`). Reuses the clock's
+    weekly normalization (Rule 3). The fuzzy half (OCR/line classification) lands as
+    `statement_analyst.py` when statement ingestion is wired (D-702/C-025).
 """
 
 from common.agents.data_steward import (
@@ -21,6 +24,18 @@ from common.agents.data_steward import (
 )
 from common.agents.default_subtype import apply_default_subtype, normalize_subtype_label
 from common.agents.grounding import is_applicable, make_extraction, review_status
+from common.agents.positions import (
+    concurrent_position_count,
+    est_weekly_revenue,
+    normalize_to_weekly,
+    statement_is_fresh,
+    summarize_statement,
+    total_weekly_debit,
+)
+from common.agents.statement_analyst import (
+    build_statement_rows,
+    classify_statement,
+)
 
 __all__ = [
     "normalize_subtype_label",
@@ -30,4 +45,12 @@ __all__ = [
     "is_applicable",
     "classify_default_cause",
     "parse_response",
+    "normalize_to_weekly",
+    "concurrent_position_count",
+    "total_weekly_debit",
+    "est_weekly_revenue",
+    "statement_is_fresh",
+    "summarize_statement",
+    "classify_statement",
+    "build_statement_rows",
 ]
