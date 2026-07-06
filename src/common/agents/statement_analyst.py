@@ -35,21 +35,39 @@ from common.agents.grounding import make_extraction
 from common.agents.positions import statement_is_fresh, summarize_statement
 
 DEFAULT_ENDPOINT = "databricks-claude-sonnet-4-5"
-MODEL_VERSION = "statement-analyst/claude-sonnet-4-5/v1"
+# v2 (D-711): v1 over-counted positions — it swept in equipment leases, bank/SBA term loans,
+# vendor/SaaS bills, and card payments as "advances", and let a single anomalous deposit inflate
+# revenue. v2 gives an explicit EXCLUDE list + a positive MCA test (frequent fixed ACH debits, only
+# a same-funder set = one position, frequency INFERRED FROM OBSERVED CADENCE not assumed) and tells
+# it to drop one-off/outlier deposits from revenue. Version bump = prompt change (audit).
+MODEL_VERSION = "statement-analyst/claude-sonnet-4-5/v2"
 
 _SYSTEM = (
     "You are a credit-operations analyst for a merchant cash advance (MCA) brokerage. You read the "
     "OCR'd text of a merchant's BUSINESS BANK STATEMENT and extract — grounding EVERY value strictly "
     "in the statement text, never inventing or assuming — the following:\n\n"
-    "1. POSITIONS: each recurring ACH-debit stream that is an MCA / funder advance repayment. For "
-    "each, return: funder (the originator/company name as printed), payment_amount (the per-debit "
-    "amount), payment_frequency (one of Daily, Weekly, Biweekly, Monthly), and is_morgan_cash (true "
-    "ONLY if the originator is Morgan Cash itself; else false). Group repeated debits from the same "
-    "funder into ONE position. Do NOT include one-off or non-advance debits (rent, payroll, utilities).\n"
+    "1. POSITIONS: each recurring ACH-debit stream that is a MERCHANT CASH ADVANCE / funder advance "
+    "repayment. An MCA repayment is a FREQUENT, FIXED debit — typically DAILY or WEEKLY (sometimes "
+    "biweekly) — to a cash-advance funder. Determine payment_frequency FROM THE OBSERVED CADENCE in "
+    "the statement (how often the debit actually recurs), never from assumption.\n"
+    "   INCLUDE only genuine advances. **EXCLUDE (these are NOT MCA positions):**\n"
+    "   - equipment / vehicle / machinery LEASES (e.g. 'LEASE PYMT', 'LEASEPAYMENT', truck/farm-machinery leasing);\n"
+    "   - bank or SBA TERM LOANS and lines of credit (e.g. 'LOAN PYMT', 'SBA LN', 'SBA LOAN', 'TERM LOAN');\n"
+    "   - vendor / software / hosting / SaaS / utility bills (e.g. hosting, Spectrum, telecom, insurance);\n"
+    "   - credit-card payments (e.g. Capital One, Amex, Chase card);\n"
+    "   - rent, payroll, taxes, and any ONE-OFF / non-recurring debit.\n"
+    "   For each included position return: funder (originator/company name as printed), payment_amount "
+    "(the per-debit amount), payment_frequency (Daily|Weekly|Biweekly|Monthly, from observed cadence), "
+    "and is_morgan_cash (true ONLY if the originator is Morgan Cash itself). Group repeated debits from "
+    "the SAME funder into ONE position. If NO debit clearly meets the MCA test, return an empty list — "
+    "do not force a position.\n"
     "2. deposits_operating_total: the total of OPERATING-REVENUE deposits over the period — sales, "
-    "card settlements, customer payments. EXCLUDE transfers between the merchant's own accounts, loan "
-    "or advance disbursements, owner capital injections, and refunds/reversals. When unsure whether a "
-    "deposit is operating revenue, EXCLUDE it and lower your confidence.\n"
+    "card settlements, customer/platform payments. EXCLUDE transfers between the merchant's own "
+    "accounts, loan or advance disbursements, owner capital injections, refunds/reversals, AND any "
+    "ONE-OFF or ANOMALOUS deposit that is far larger than the recurring revenue pattern and not "
+    "clearly recurring sales (a single outsized deposit is likely financing/a settlement, not "
+    "operating revenue). When unsure whether a deposit is operating revenue, EXCLUDE it and lower "
+    "your confidence.\n"
     "3. period_days: the number of days the statement covers; as_of_date: the statement's end date "
     "(YYYY-MM-DD).\n\n"
     "If the text is not a readable bank statement, return empty positions, null deposits, and low "
