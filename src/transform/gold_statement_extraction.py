@@ -23,7 +23,7 @@ from pyspark.sql import SparkSession, Window
 from pyspark.sql import functions as F
 
 from common import constants as C
-from common.agents.statement_analyst import DEFAULT_ENDPOINT, MODEL_VERSION, build_statement_rows
+from common.agents.statement_analyst import DEFAULT_ENDPOINT, MODEL_VERSION, build_statement_extractions
 from transform.gold_extraction import (
     _append_extraction_events,
     _create_current_view,
@@ -78,6 +78,20 @@ def _write_statement_extractions(df, target: str, run_date: date, spark: SparkSe
     df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(target)
 
 
+def _write_audit(spark: SparkSession, audit: list[dict], target: str, run_date: date) -> None:
+    """Write the agent's full per-statement parse (audit trail). Delete-then-append on run_date."""
+    if not audit:
+        return
+    df = spark.createDataFrame(audit)
+    if not spark.catalog.tableExists(target):
+        df.write.format("delta").partitionBy("extraction_run_date").mode("overwrite").option(
+            "overwriteSchema", "true"
+        ).saveAsTable(target)
+        return
+    spark.sql(f"DELETE FROM {target} WHERE extraction_run_date = date'{run_date.isoformat()}'")
+    df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(target)
+
+
 def build_gold_statement_extraction(
     spark: SparkSession,
     catalog: str = C.CATALOG,
@@ -106,11 +120,15 @@ def build_gold_statement_extraction(
     event_target = C.fq(schema, C.GoldTable.MERCHANT_EVENT_LOG, catalog)
 
     records = statement_records(spark, catalog, silver_schema)
-    rows = build_statement_rows(records, run_date, predict_fn, endpoint=endpoint, model_version=model_version)
+    result = build_statement_extractions(records, run_date, predict_fn, endpoint=endpoint, model_version=model_version)
+    rows, audit = result["rows"], result["audit"]
 
     ext_df = _extraction_df(spark, rows)
     _write_statement_extractions(ext_df, ext_target, run_date, spark)
     _create_current_view(spark, ext_target, ext_current)
+
+    audit_target = C.fq(schema, C.GoldTable.STATEMENT_EXTRACTION_AUDIT, catalog)
+    _write_audit(spark, audit, audit_target, run_date)
 
     events = _events_df(spark, rows, run_date)
     _append_extraction_events(events, event_target, run_date, spark)
@@ -121,6 +139,7 @@ def build_gold_statement_extraction(
     return {
         "merchant_extraction": ext_target,
         "merchant_extraction_current": ext_current,
+        "statement_extraction_audit": audit_target,
         "merchant_event_log": event_target,
         "extraction_run_date": run_date.isoformat(),
         "silver_schema": silver_schema,

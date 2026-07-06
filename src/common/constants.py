@@ -511,6 +511,10 @@ class GoldTable:
     # optional enrichment via the normal re-run. The agent never writes spine tables.
     MERCHANT_EXTRACTION = "merchant_extraction"
     MERCHANT_EXTRACTION_CURRENT = "merchant_extraction_current"
+    # S7 Phase-2 Statement Analyst audit trail — the agent's FULL per-statement parse (positions
+    # breakdown JSON, deposits, period, confidence, citation), so "which statement numbers" is
+    # answerable without re-running the model. One row per statement per run.
+    STATEMENT_EXTRACTION_AUDIT = "statement_extraction_audit"
     BOOK_HEALTH = "book_health"
     BOOK_HEALTH_CURRENT = "book_health_current"
     RENEWAL_PERFORMANCE_CURRENT = "renewal_performance_current"

@@ -150,26 +150,29 @@ def _row(merchant_id, deal_id, ext_type, value, confidence, source_ref, citation
     return ext
 
 
-def build_statement_rows(
+def build_statement_extractions(
     records: list[dict],
     run_date,
     predict_fn,
     *,
     endpoint: str = DEFAULT_ENDPOINT,
     model_version: str = MODEL_VERSION,
-) -> list[dict]:
+) -> dict:
     """Pure orchestration (no Spark): for each statement record
     {merchant_id, deal_id, statement_text, source_ref, as_of_date}, ask the model, run the
-    deterministic counter (`summarize_statement`), and emit up to THREE grounded extraction rows —
-    CONCURRENT_POSITIONS, WEEKLY_DEBIT, EST_WEEKLY_REVENUE. Freshness (#2) gates stale snapshots to
-    REVIEW; the revenue confidence is haircut (#3). These rows are recorded + surfaced only — they
-    NEVER feed the rung waterfall (#1). Lives here (Spark-free) so the whole path is tier-1 testable
-    with a fake predict_fn; the transform is a thin wrapper (Rule 3)."""
+    deterministic counter (`summarize_statement`), and return BOTH:
+      - `rows`: up to THREE grounded extraction rows — CONCURRENT_POSITIONS, WEEKLY_DEBIT,
+        EST_WEEKLY_REVENUE (the gold.merchant_extraction shape);
+      - `audit`: one row per statement carrying the agent's FULL parse (the per-position breakdown
+        as JSON, deposits total, period, confidence, citation) — the audit trail so "which statement
+        numbers" is answerable without re-running the model.
+    Freshness (#2) gates stale snapshots to REVIEW; the revenue confidence is haircut (#3). Rows are
+    recorded + surfaced only — they NEVER feed the rung waterfall (#1). Spark-free → tier-1 testable."""
     rows: list[dict] = []
+    audit: list[dict] = []
     for r in records:
         merchant_id, deal_id = r["merchant_id"], r.get("deal_id")
-        text = r.get("statement_text")
-        proposal = classify_statement(text, predict_fn, endpoint=endpoint)
+        proposal = classify_statement(r.get("statement_text"), predict_fn, endpoint=endpoint)
         summary = summarize_statement(
             proposal["positions"], proposal["deposits_operating_total"], proposal["period_days"],
         )
@@ -189,4 +192,23 @@ def build_statement_rows(
                          None if rev is None else round(rev, 2),
                          conf * C.STATEMENT_REVENUE_CONFIDENCE_HAIRCUT,  # #3 — revenue is the softest signal
                          source_ref, citation, model_version, run_date, fresh))
-    return rows
+
+        audit.append({
+            "merchant_id": merchant_id, "deal_id": deal_id, "source_ref": source_ref,
+            "as_of_date": (str(as_of) if as_of is not None else None), "extraction_run_date": run_date,
+            "positions_json": json.dumps(proposal["positions"]),
+            "position_count": summary["concurrent_positions"],
+            "total_weekly_debit": round(summary["total_weekly_debit"], 2),
+            "est_weekly_revenue": (None if rev is None else round(rev, 2)),
+            "deposits_operating_total": proposal["deposits_operating_total"],
+            "period_days": proposal["period_days"], "confidence": conf, "fresh": fresh,
+            "citation": citation, "model_version": model_version,
+        })
+    return {"rows": rows, "audit": audit}
+
+
+def build_statement_rows(records, run_date, predict_fn, *, endpoint=DEFAULT_ENDPOINT, model_version=MODEL_VERSION):
+    """The extraction rows only (thin wrapper over `build_statement_extractions`; Rule 3)."""
+    return build_statement_extractions(
+        records, run_date, predict_fn, endpoint=endpoint, model_version=model_version
+    )["rows"]

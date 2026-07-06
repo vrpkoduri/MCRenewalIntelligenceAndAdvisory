@@ -33,6 +33,7 @@ from common.agents.positions import (
     total_weekly_debit,
 )
 from common.agents.statement_analyst import (
+    build_statement_extractions,
     build_statement_rows,
     classify_statement,
 )
@@ -53,4 +54,5 @@ __all__ = [
     "summarize_statement",
     "classify_statement",
     "build_statement_rows",
+    "build_statement_extractions",
 ]

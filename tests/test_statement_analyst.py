@@ -15,6 +15,7 @@ from datetime import date
 from common import constants as C
 from common.agents.statement_analyst import (
     MODEL_VERSION,
+    build_statement_extractions,
     build_statement_rows,
     classify_statement,
     parse_response,
@@ -117,6 +118,20 @@ def test_stale_statement_all_reviewed_not_surfaced():
              "source_ref": "ref", "as_of_date": STALE}]
     rows = build_statement_rows(recs, RUN, _fake(_reply(_TWO_POS, 42000, 28, as_of=STALE)))
     assert all(r["review_status"] == C.ReviewStatus.REVIEW for r in rows)  # #2 freshness gate
+
+
+def test_build_statement_extractions_audit_captures_full_parse():
+    recs = [{"merchant_id": "M1", "deal_id": "D1", "statement_text": "stmt",
+             "source_ref": "salesforce.contentversion:068X", "as_of_date": FRESH}]
+    result = build_statement_extractions(recs, RUN, _fake(_reply(_TWO_POS, 42000, 28)))
+    assert len(result["rows"]) == 3          # the 3 grounded extraction rows
+    assert len(result["audit"]) == 1         # one audit row per statement
+    a = result["audit"][0]
+    assert a["position_count"] == 1 and a["deposits_operating_total"] == 42000.0 and a["period_days"] == 28
+    assert '"funder": "Funder B"' in a["positions_json"]   # full per-position breakdown persisted
+    assert a["source_ref"] == "salesforce.contentversion:068X@" + FRESH and a["fresh"] is True
+    # build_statement_rows stays a thin wrapper returning just the rows
+    assert build_statement_rows(recs, RUN, _fake(_reply(_TWO_POS, 42000, 28))) == result["rows"]
 
 
 def test_none_revenue_never_applied():
