@@ -33,13 +33,26 @@ _STMT_TYPES = (
     C.ExtractionType.EST_WEEKLY_REVENUE,
 )
 
-# --- D-711 hand-labeled sample (OPERATOR fills this; empty ⇒ gate is a no-op) -------------------
-# deal_id -> operator-read ground truth from the actual statement(s):
-#   {"merchant": "...", "concurrent_positions": <int>, "weekly_debit": <float>, "est_weekly_revenue": <float>}
-# Anchor on Wolf + ~5–9 recent (fresh) covered deals; a couple of stale ones exercise the REVIEW path.
-STATEMENT_LABELS: dict = {}
+# --- D-711 hand-labeled sample — operator-confirmed on prompt v2 (2026-07-09) --------------------
+# deal_id -> {"merchant", "positions"} = the operator-confirmed TRUE count of genuine cash-advance
+# positions, read against the actual statements ("all look good and as expected" on the v2 run).
+# This is a POSITIONS-only gate (the highest-value signal); revenue accuracy is deferred to FU-704
+# (est_weekly_revenue is advisory/soft — C-026 #3). Scored on the agent's extracted position count
+# regardless of review_status, so accuracy is decoupled from the freshness surfacing gate (#2).
+STATEMENT_LABELS: dict = {
+    "006UU00000QSuEoYAL": {"merchant": "A1a Environmental", "positions": 0},   # hosting bill excluded (v2)
+    "0065e00000LjuQXAAZ": {"merchant": "5 Star Burgers", "positions": 2},      # Fundomate, DoorDash Capital
+    "006UU00000QnGnpYAF": {"merchant": "Tom Snell", "positions": 2},           # Northland, GrtWestCas (leases excluded)
+    "006UU00000RU9kfYAD": {"merchant": "Hjm Construction", "positions": 2},    # OnDeck, Aspire (Coast rightly excluded)
+    "006UU00000RdVHLYA3": {"merchant": "All Point Limo", "positions": 4},      # Honest, Fundworks, Forward, Spartan
+    "006UU00000RlkO3YAJ": {"merchant": "Wolf Corporation", "positions": 3},    # ExpansionCap, OnDeck, ByzFunder
+    "006UU00000DYz9mYAD": {"merchant": "Wolfe Pack Express", "positions": 1},  # Forward Financing (stale→REVIEW)
+    "0065e00000KCQpYAAX": {"merchant": "David Meyers / D&K", "positions": 0},  # image, no text → abstain
+    "0065e00000KCPqJAAX": {"merchant": "Findley White / Ind Pawn", "positions": 0},  # bank letter → abstain
+    "0065e00000KCgIYAA1": {"merchant": "Flener IP Law", "positions": 2},       # OnDeck, Newtek (SBA/bank loans excluded)
+}
 POSITION_TOL = 1           # concurrent positions within ±1 (SPRINT_7_PLAN / D-711)
-AMOUNT_TOL_PCT = 0.15      # weekly_debit / est_weekly_revenue within ±15% (revenue is the soft one, #3)
+AMOUNT_TOL_PCT = 0.15      # reserved for the revenue gate (FU-704); not scored today (#3, revenue soft)
 ACCURACY_BAR = 0.80
 
 
@@ -113,34 +126,31 @@ def run_recon(spark, catalog=C.CATALOG, schema=C.Schema.GOLD_TEST, run_date=None
         .groupBy("value").agg(F.count(F.lit(1)).alias("n")).collect()
     }
 
-    # === D-711 accuracy (only when labels are provided) ===
+    # === D-711 POSITIONS accuracy (operator-confirmed truth; revenue deferred to FU-704) ===
+    # Score the extracted position COUNT regardless of review_status, so accuracy is decoupled from
+    # the freshness surfacing gate (#2) and robust to run_date drift.
     if STATEMENT_LABELS:
-        applied = {
-            (r["deal_id"], r["extraction_type"]): r["value"]
-            for r in ext.where(F.col("review_status") == F.lit(C.ReviewStatus.APPLIED))
-            .select("deal_id", "extraction_type", "value").collect()
+        posval = {
+            r["deal_id"]: r["value"]
+            for r in ext.where(F.col("extraction_type") == F.lit(C.ExtractionType.CONCURRENT_POSITIONS))
+            .select("deal_id", "value").collect()
         }
         results, correct = [], 0
         for deal_id, truth in STATEMENT_LABELS.items():
-            got_pos = _num(applied.get((deal_id, C.ExtractionType.CONCURRENT_POSITIONS)))
-            got_deb = _num(applied.get((deal_id, C.ExtractionType.WEEKLY_DEBIT)))
-            got_rev = _num(applied.get((deal_id, C.ExtractionType.EST_WEEKLY_REVENUE)))
-            ok_pos = got_pos is not None and abs(got_pos - truth["concurrent_positions"]) <= POSITION_TOL
-            ok_deb = got_deb is not None and abs(got_deb - truth["weekly_debit"]) <= AMOUNT_TOL_PCT * truth["weekly_debit"]
-            ok_rev = got_rev is not None and abs(got_rev - truth["est_weekly_revenue"]) <= AMOUNT_TOL_PCT * truth["est_weekly_revenue"]
-            ok = ok_pos and ok_deb and ok_rev
+            got = _num(posval.get(deal_id))
+            ok = got is not None and abs(got - truth["positions"]) <= POSITION_TOL
             correct += int(ok)
-            results.append({"merchant": truth["merchant"], "deal_id": deal_id, "ok": ok,
-                            "ok_positions": ok_pos, "ok_debit": ok_deb, "ok_revenue": ok_rev,
-                            "got": {"positions": got_pos, "debit": got_deb, "revenue": got_rev}})
+            results.append({"merchant": truth["merchant"], "deal_id": deal_id,
+                            "true_positions": truth["positions"], "agent_positions": got, "ok": ok})
         n = len(STATEMENT_LABELS)
         findings["labeled_n"] = n
         findings["labeled_correct"] = correct
         findings["labeled_accuracy"] = round(correct / n, 4) if n else None
         findings["labeled_results"] = results
         findings["accuracy_bar"] = ACCURACY_BAR
+        findings["position_tolerance"] = POSITION_TOL
     else:
-        findings["labeled_pending"] = True  # operator has not filled STATEMENT_LABELS yet
+        findings["labeled_pending"] = True
 
     return findings
 
