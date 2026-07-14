@@ -133,10 +133,16 @@ def _write_point_in_time(df: DataFrame, target: str, run_date: date, spark: Spar
 
 
 def _create_current_view(spark: SparkSession, base: str, view: str) -> None:
+    """`_current` = the latest row per (merchant_id, deal_id, extraction_type) — NOT the global
+    latest run_date. `merchant_extraction` is a MULTI-STREAM table (Data Steward `default_subtype`
+    + Statement Analyst positions/burden/revenue) written on INDEPENDENT cadences; a global-MAX view
+    would evict an older stream (e.g. default_subtype) the moment a newer stream is written — which
+    the S3 classifier reads for `resolved_default_subtype`, silently reverting resolved defaults.
+    Per-key latest keeps every stream's most-recent extraction current."""
     spark.sql(
-        f"CREATE OR REPLACE VIEW {view} AS "
-        f"SELECT * FROM {base} WHERE extraction_run_date = "
-        f"(SELECT MAX(extraction_run_date) FROM {base})"
+        f"CREATE OR REPLACE VIEW {view} AS SELECT * EXCEPT (_rn) FROM ("
+        f"SELECT *, ROW_NUMBER() OVER (PARTITION BY merchant_id, deal_id, extraction_type "
+        f"ORDER BY extraction_run_date DESC) AS _rn FROM {base}) WHERE _rn = 1"
     )
 
 

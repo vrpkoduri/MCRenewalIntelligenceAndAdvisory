@@ -117,6 +117,11 @@ def run_recon(spark, catalog=C.CATALOG, schema=C.Schema.GOLD_TEST, run_date=None
     cur_dates = sorted(str(r[0]) for r in cur.select("extraction_run_date").distinct().collect())
     findings["current_run_dates"] = cur_dates
     findings["current_count"] = cur.count()
+    # multi-stream table (D-711): _current is per-(merchant,deal,type) latest, so it may carry other
+    # extraction types on other run_dates. Assert THIS run's default_subtype rows are all current.
+    findings["current_default_subtype_count"] = cur.where(
+        F.col("extraction_type") == F.lit(C.ExtractionType.DEFAULT_SUBTYPE)
+    ).count()
 
     # the agent touched ONLY its own tables — agent_extraction events present; spine event types intact.
     elog = spark.read.table(targets["merchant_event_log"])
@@ -226,10 +231,15 @@ def assert_recon(findings: dict) -> list[str]:
     ):
         if findings.get(k, 0) != 0:
             failures.append(f"{label}: {findings.get(k)} rows")
-    if findings.get("current_run_dates") != [findings.get("run_date")]:
-        failures.append(f"_current not the single run_date: {findings.get('current_run_dates')}")
-    if findings.get("current_count") != findings.get("extraction_count"):
-        failures.append("_current count != latest partition count")
+    # multi-stream _current (D-711): this run's default_subtype rows must be current (a global
+    # single-run_date check no longer holds once the Statement Analyst writes other types/dates).
+    if findings.get("run_date") not in findings.get("current_run_dates", []):
+        failures.append(f"_current missing this run_date: {findings.get('current_run_dates')}")
+    if findings.get("current_default_subtype_count") != findings.get("extraction_count"):
+        failures.append(
+            f"_current default_subtype count {findings.get('current_default_subtype_count')} "
+            f"!= this run's {findings.get('extraction_count')} (per-key _current regression)"
+        )
     # an extraction run with closed_default deals must emit agent_extraction events
     if findings.get("closed_default_deal_universe", 0) > 0 and findings.get("agent_extraction_events", 0) == 0:
         failures.append("no agent_extraction events emitted despite closed_default deals")
