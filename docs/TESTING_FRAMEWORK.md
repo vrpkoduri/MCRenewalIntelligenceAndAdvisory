@@ -86,7 +86,9 @@ Added: `test_agents` (17 total = 12 deterministic-tool + 5 LLM-agent). The deter
 
 - `test_statement_fetch` (4) — the pure helpers in `ingestion/statement_fetch.py`: `is_statement` (doctype tag ∪ title heuristic), `location_to_deal_map` (opp + submission → funded deal), `covered_statement` (only funded statements pass), `statement_file_row` (shape + `as_of_date` = CreatedDate proxy). Network/Volume I/O is the driver (run on Databricks).
 
-**Result (2026-06-09): 21 new (10 positions + 7 analyst + 4 fetch) → 323 passed, 0 failed (tier-1).**
+**Result: 22 new (10 positions + 8 analyst + 4 fetch) → 324 passed, 0 failed (tier-1)** (the +1 = `build_statement_extractions` audit-trail test added with JSON persistence).
+
+**Tier-2 D-711 positions accuracy gate — PASSED on `gold_test` then PROMOTED to PROD (2026-07-13/14, C-028/C-030):** `recon_statement_analyst.STATEMENT_LABELS` = operator-confirmed true position counts for 10 sampled deals; the recon scores the extracted count (±1, regardless of review_status). **labeled_accuracy 1.0 (10/10), `failures: []`**; mechanical gates (schema/coverage/keys/grounding/no-surface/`_current`) green. Revenue accuracy deferred (FU-704). A `_current` multi-stream bug was caught + fixed pre-PROD (C-029 — per-(merchant,deal,type) latest so the Data Steward's `default_subtype` isn't evicted; verified in PROD: both streams current). **PROD promotion:** OCR → `silver.statement_text` (324 files) + `build_gold_statement_extraction(schema=gold, allow_prod=True)` → 237 rows (14 applied / 223 review) + audit(79) + 237 events; advisory-only.
 
 **Binary fetch RUN on Databricks (2026-06-09):** `ingestion.statement_fetch.fetch_statements` via the Client-Credentials token → **324 statement PDFs / 167.9 MB / 79 funded deals** landed in the governed UC Volume `mca_mri.bronze.statements_raw` + `bronze.statement_files`. (Read-only token+VersionData validity test passed first: 200 / 3.32 MB / no 403.) Next: silver OCR → `gold_statement_extraction` → D-711 labeled-sample accuracy gate on `gold_test`.
 

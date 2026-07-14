@@ -105,7 +105,7 @@ Medallion layers in Unity Catalog: `mri.bronze.*`, `mri.silver.*`, `mri.gold.*`.
 
 ## 7. Build order & current status
 
-**Living status is `docs/SPRINT_TRACKER.md` (authoritative, C-008).** Snapshot (2026-06-05):
+**Living status is `docs/SPRINT_TRACKER.md` (authoritative, C-008).** Snapshot (2026-07-14):
 
 | Sprint | Block | Status |
 |---|---|---|
@@ -116,9 +116,11 @@ Medallion layers in Unity Catalog: `mri.bronze.*`, `mri.silver.*`, `mri.gold.*`.
 | S4 | Activation + Book Health | ✅ PROD `gold` |
 | S5 | Offer Engine | ◑ offline built (gated on FU-501 handoff contract) |
 | S6 | Prediction | ✅ PROD `gold` (lifetimes v1; FU-602 Bayesian upgrade open) |
-| S7 | Agentic extraction — Phase 1 Data Steward | ✅ **PROD `gold` (D-706 6/6, C-024)**; Phase 2 Statement Analyst deferred (D-702) |
-| S8 | Advisory comms + agents (Composer, Structure Advisor) + compliance | next major sprint |
+| S7 | Agentic extraction — Data Steward + Statement Analyst | ✅ **both in PROD `gold`** — Ph-1 Data Steward (D-706 6/6, C-024); Ph-2 Statement Analyst (D-711 10/10, C-025…C-030, merged to `main`) |
+| S8 | Advisory comms + agents (Composer, Structure Advisor) + compliance | **next major sprint** |
 | S9+ | Merchant app | |
+
+**Tests:** 324 tier-1 green. Only S0 bronze ingestion is on an automated schedule (Lakeflow CDC, 6h); the rest of the spine runs as gated manual promotions (scheduling = FU-707).
 
 Activation surface: a read-only Lakeview dashboard over PROD `gold` (C-021) instead of the SF write-back (FU-401 deferred).
 
