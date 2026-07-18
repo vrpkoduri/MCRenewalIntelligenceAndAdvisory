@@ -204,6 +204,54 @@ def agent_extraction_event(
     return row
 
 
+# --- S8 advisory events (D-305 — same wide table; new event types, no new columns) ---
+
+
+def advisory_composed_event(merchant_id: str, advisory_run_date, advisory: dict, event_ts) -> dict:
+    """An `advisory_composed` event (S8) — a timeline marker that the Advisory Composer produced a
+    grounded advisory. The FULL detail (headline/rationale/grounded_refs/compliance_status) lives
+    in the durable `gold.merchant_advisory` table (analogous to how merchant_rung IS the
+    classification history). We surface the floor-relevant disposition on the wide log via
+    `transition_field` = '<advisory_type>:<review_status>' + the confidence. Append-only.
+    `advisory` is a compose_advisory row."""
+    row = _base_row(merchant_id, C.EventType.ADVISORY_COMPOSED, event_ts, advisory_run_date)
+    row.update(
+        {
+            "confidence": advisory.get("confidence"),
+            "transition_field": (
+                f"{advisory.get('advisory_type')}:{advisory.get('review_status')}"
+            ),
+        }
+    )
+    return row
+
+
+def compliance_checked_event(merchant_id: str, advisory_run_date, advisory: dict, event_ts) -> dict:
+    """A `compliance_checked` event (S8) — the deterministic gate's verdict on a merchant-facing
+    output, logged for audit (§2.4). `transition_field` = '<advisory_type>:<compliance_status>';
+    a BLOCKED verdict is recorded here so a suppressed/ungrounded artifact leaves an audit trail
+    even though it is never delivered. Append-only. `advisory` is a compose_advisory row."""
+    row = _base_row(merchant_id, C.EventType.COMPLIANCE_CHECKED, event_ts, advisory_run_date)
+    row.update(
+        {
+            "confidence": advisory.get("confidence"),
+            "transition_field": (
+                f"{advisory.get('advisory_type')}:{advisory.get('compliance_status')}"
+            ),
+        }
+    )
+    return row
+
+
+def build_advisory_events(merchant_id: str, advisory_run_date, advisory: dict, event_ts) -> list[dict]:
+    """Both S8 events for one composed advisory: an `advisory_composed` marker + a
+    `compliance_checked` gate-verdict marker. Append-only — NEW rows, nothing mutated."""
+    return [
+        advisory_composed_event(merchant_id, advisory_run_date, advisory, event_ts),
+        compliance_checked_event(merchant_id, advisory_run_date, advisory, event_ts),
+    ]
+
+
 def build_activation_events(
     merchant_id: str, activation_run_date, activation: dict, event_ts, prev: dict | None = None
 ) -> list[dict]:

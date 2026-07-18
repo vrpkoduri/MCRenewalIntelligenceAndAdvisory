@@ -184,9 +184,11 @@ class EventType:
     OFFER_COMPUTED = "offer_computed"  # a proactive offer scan produced/changed options (S5)
     PREDICTION = "prediction"  # a model inference produced/updated predictions for a merchant (S6)
     AGENT_EXTRACTION = "agent_extraction"  # an agent extracted a grounded signal from source (S7)
+    ADVISORY_COMPOSED = "advisory_composed"  # the Advisory Composer produced a grounded advisory (S8)
+    COMPLIANCE_CHECKED = "compliance_checked"  # a merchant-facing output passed/failed the gate (S8)
     ALL = frozenset(
         {CLASSIFICATION, TRANSITION, STATE_TRANSITION, PLAY_FIRED, OFFER_COMPUTED, PREDICTION,
-         AGENT_EXTRACTION}
+         AGENT_EXTRACTION, ADVISORY_COMPOSED, COMPLIANCE_CHECKED}
     )
 
 
@@ -410,6 +412,61 @@ STATEMENT_FRESHNESS_MAX_DAYS = 180
 STATEMENT_REVENUE_CONFIDENCE_HAIRCUT = 0.85
 
 
+# --- Advisory Layer + Compliance Gate (Build Plan §7, Framework §2.3/§2.4/§5.9, S8 / C-031) ---
+# The advisory layer ARTICULATES the spine's computed facts into honest, merchant-facing
+# guidance; the compliance gate is a FIRST-CLASS DETERMINISTIC block every merchant-facing
+# output must pass. Agents articulate/orchestrate — they never compute the spine and never
+# decide compliance (Framework §5.9). Realizes the S5 compliance_gate_hook (D-508). Pure enums
+# (no Spark) so common/advisory + common/compliance are tier-1 testable. **S8 COMPOSES + GATES;
+# it does NOT send** (no outbound comms / SF write / merchant app).
+
+
+class AdvisoryType:
+    """What a merchant-facing advisory IS (D-806) — drives how strictly the compliance gate
+    treats it. The agent proposes an intent; the DETERMINISTIC classifier (common/compliance)
+    re-derives the type and is the authority, so a mislabeling agent can never downgrade a
+    specific offer into 'advice' to dodge the strict path."""
+
+    FACTUAL_SUMMARY = "factual-summary"  # restates the merchant's OWN computed situation (paydown/clock)
+    ADVICE = "advice"  # general guidance / eligibility / paydown coaching — names NO concrete terms
+    SPECIFIC_OFFER = "specific-offer"  # names concrete terms (amount / factor / payment) — strict path
+    ALL = frozenset({FACTUAL_SUMMARY, ADVICE, SPECIFIC_OFFER})
+
+
+class ComplianceStatus:
+    """The compliance gate verdict (D-801). A HARD gate: a BLOCKED artifact is stored (auditable)
+    but NEVER marked deliverable. Only PASS may ever be delivered (delivery itself is S9+/gated)."""
+
+    PASS = "pass"  # grounded, suitable, disclosures satisfied — may be delivered (later, gated)
+    BLOCKED = "blocked"  # ungrounded / unsuitable-offer-pitched / missing disclosure — never delivered
+    ALL = frozenset({PASS, BLOCKED})
+
+
+class DisclosureRegime:
+    """State-aware commercial-financing disclosure regimes (D-805). v1 FLAGS which regime applies
+    and REQUIRES a disclosure block be present on a specific offer; it does NOT draft binding legal
+    language (counsel owns wording). NONE = no special regime identified for the state (NOT an
+    assertion that none exists — the list is seeded + counsel-extended)."""
+
+    NONE = "none"
+    CA_CFDL = "CA-commercial-financing-disclosure"  # CA commercial financing disclosure (SB 1235 / DFPI)
+    NY_CFDL = "NY-commercial-financing-disclosure"  # NY Commercial Finance Disclosure Law
+    UT_CFR = "UT-commercial-financing-registration"  # UT commercial financing registration/disclosure
+    VA_CFR = "VA-commercial-financing-disclosure"  # VA commercial financing disclosure
+    ALL = frozenset({NONE, CA_CFDL, NY_CFDL, UT_CFR, VA_CFR})
+
+
+# State (USPS code) -> disclosure regime (D-805). Config-driven so the list changes in ONE place
+# (Rule 3), **pending counsel review before any cloud run**. Keyed by gold.merchants.governing_state.
+# v1 = flag the regime + require a disclosure block; it is NOT legal wording. Absent state => NONE.
+DISCLOSURE_RULES = {
+    "CA": DisclosureRegime.CA_CFDL,
+    "NY": DisclosureRegime.NY_CFDL,
+    "UT": DisclosureRegime.UT_CFR,
+    "VA": DisclosureRegime.VA_CFR,
+}
+
+
 class Verdict:
     """Data Contract availability verdicts."""
 
@@ -515,6 +572,13 @@ class GoldTable:
     # breakdown JSON, deposits, period, confidence, citation), so "which statement numbers" is
     # answerable without re-running the model. One row per statement per run.
     STATEMENT_EXTRACTION_AUDIT = "statement_extraction_audit"
+    # S8 Advisory layer (Build Plan §7 / Framework §2.3/§2.4/§5.9) — point-in-time
+    # `merchant_advisory` (+`_current`): the grounded, compliance-gated, merchant-facing advisory
+    # the Advisory Composer + Structure Advisor produce. STORED, not delivered (S8 composes +
+    # gates; delivery is S9+/gated). Every row carries a compliance_status; a BLOCKED row is never
+    # marked deliverable. The agent never writes a spine-math column (Framework §5.9).
+    MERCHANT_ADVISORY = "merchant_advisory"
+    MERCHANT_ADVISORY_CURRENT = "merchant_advisory_current"
     BOOK_HEALTH = "book_health"
     BOOK_HEALTH_CURRENT = "book_health_current"
     RENEWAL_PERFORMANCE_CURRENT = "renewal_performance_current"

@@ -482,6 +482,39 @@ def merchant_extraction_columns() -> list[str]:
     return [fs.silver_col for fs in MERCHANT_EXTRACTION_MAP]
 
 
+# =============================================================================
+# GOLD layer (S8) — Advisory outputs (Build Plan §7 / Framework §2.3/§2.4/§5.9). POINT-IN-TIME
+# `merchant_advisory` keyed (merchant_id, advisory_run_date), append-only + `_current` view.
+# Source-label convention:
+#   "advisory:<...>"   composed by common/advisory (the Composer wording, grounded in the fact pack)
+#   "structure:<...>"  articulated from the S5 renewal-vs-buyout math (common/offer, NOT recomputed)
+#   "gate:<...>"       the deterministic compliance gate verdict (common/compliance)
+#   "run:today"        the advisory run date
+# Every row is GROUNDED (grounded_refs; an invented number is REJECTED before storage) and GATED
+# (compliance_status). STORED, NOT delivered (S8 composes + gates; delivery is S9+/gated). The
+# agent NEVER writes a spine-math column (Framework §5.9). NO SF stored balances.
+# =============================================================================
+
+MERCHANT_ADVISORY_MAP: tuple[FieldSpec, ...] = (
+    FieldSpec("merchant_id", "string", "advisory:from gold.merchants", Verdict.HAVE, "PK part (with advisory_run_date)"),
+    FieldSpec("advisory_run_date", "date", "run:today", Verdict.DERIVE, "PK part; point-in-time stamp"),
+    FieldSpec("advisory_type", "enum", "gate:D-806 classifier", Verdict.DERIVE, "factual-summary / advice / specific-offer — the DETERMINISTIC gate's verdict, not the agent's label"),
+    FieldSpec("headline", "string", "advisory:Composer wording", Verdict.DERIVE, "merchant-facing headline; grounded only in the fact pack (no invented numbers)"),
+    FieldSpec("rationale", "string", "advisory:Composer wording", Verdict.DERIVE, "the honest 'why' — grounded prose; may say 'wait / don't take money'"),
+    FieldSpec("recommended_action", "string", "structure:deterministic", Verdict.DERIVE, "the DETERMINISTIC action (from the clock / Structure Advisor) — agent words it, never decides it"),
+    FieldSpec("grounded_refs", "string", "advisory:fact-pack sources", Verdict.DERIVE, "JSON of the gold fields + run_date each surfaced number came from (audit; the honesty proof)"),
+    FieldSpec("confidence", "decimal", "advisory:model confidence", Verdict.DERIVE, "[0,1]; < AGENT_CONFIDENCE_REVIEW_MIN → review, never auto-deliverable"),
+    FieldSpec("model_version", "string", "advisory:Foundation Model + ruleset", Verdict.DERIVE, "model/agent version — reproducibility & audit (Event Log contract)"),
+    FieldSpec("compliance_status", "enum", "gate:D-801 hard gate", Verdict.DERIVE, "pass / blocked — a BLOCKED artifact is stored but NEVER marked deliverable"),
+    FieldSpec("required_disclosures", "string", "gate:D-805 state-aware", Verdict.DERIVE, "comma-joined disclosure regimes required (e.g. NY-CFDL); empty when none"),
+    FieldSpec("review_status", "enum", "advisory:grounding+gate disposition", Verdict.DERIVE, "applied / review / rejected — only `applied` (grounded, PASS, confident) is deliverable"),
+)
+
+
+def merchant_advisory_columns() -> list[str]:
+    return [fs.silver_col for fs in MERCHANT_ADVISORY_MAP]
+
+
 def deal_table_columns() -> list[str]:
     return [fs.silver_col for fs in DEAL_TABLE_MAP] + [c for c, _ in GOLD_DEALS_DQ_COLUMNS]
 
