@@ -108,6 +108,24 @@ D-701…D-706 signed 2026-06-05 (C-022); **Phase-1 Data Steward in PROD `gold` �
 
 Reuses S3 `route_for_default` (no duplicate routing — Rule 3). `constants` adds `ExtractionType`/`ReviewStatus`/`EventType.AGENT_EXTRACTION`/`AGENT_CONFIDENCE_REVIEW_MIN`. Consumed by the **Data Steward LLM agent + `transform/gold_extraction.py`** (build gated) writing `gold.merchant_extraction`; the spine re-run reads APPLIED extractions as optional enrichment — the agent never writes spine tables.
 
+## Built (Sprint 8 — advisory layer + first-class compliance gate, §2.3/§2.4/§5.9)
+
+D-801…D-807 signed 2026-07-18 (C-031); **offline deterministic + pure-agent modules built & green (352 tier-1).** The agents ARTICULATE; deterministic code owns every fact + the gate verdict. Realizes the S5 `compliance_gate_hook` (D-508). Pure / no-LLM-at-import (the LLM half uses an injected `predict_fn`). **S8 composes + gates; it does NOT send** — FM/cloud transform + delivery gated.
+
+| Component | Path | Contract / purpose |
+|---|---|---|
+| `compliance.classify` | `src/common/compliance/classify.py` | D-806: `classify_output_type` (advice / specific-offer / factual-summary) + `names_concrete_terms` — the DETERMINISTIC authority on output type (a specific offer names a concrete money term), independent of the agent's self-declared intent. |
+| `compliance.disclosure` | `src/common/compliance/disclosure.py` | D-805: `disclosure_regime(governing_state)` + `required_disclosures(output_type, state)` from `constants.DISCLOSURE_RULES` (seeded CA/NY/UT/VA). v1 flags the regime + requires a disclosure block on a specific offer; does NOT draft legal language (counsel owns wording). |
+| `compliance.gate` | `src/common/compliance/gate.py` | D-801: `compliance_gate` — the **HARD gate**: BLOCKs an ungrounded output, a suppressed/unsuitable offer pitched as specific, or a specific offer missing a required disclosure; else PASS, with machine-readable `reasons`. `passes` helper. |
+| `advisory.factpack` | `src/common/advisory/factpack.py` | D-802: `build_fact_pack` (the grounded fact pack from the gold `_current` signals — each number tagged source-field + run_date; present-only, never fabricated); `ungrounded_tokens`/`validate_grounding` (no numeric/date token outside the pack — 0 invented numbers; pct dual-form + money cent/dollar rounding). |
+| `advisory.structure_advisor` | `src/common/advisory/structure_advisor.py` | D-803: `advise_structure` — articulates the S5 `structure_evaluation`/`suitability_verdict` (double-dip cost, wait-vs-buyout) into a grounded recommended action; NEVER recomputes the math; a SUPPRESS/WAIT verdict → wait-and-pay-down (cannot un-suppress). |
+| `advisory.composer` | `src/common/advisory/composer.py` | D-802: the LLM wording half (grounded prompt + tolerant `parse_response`) + the pure `compose_advisory` pipeline (**fact pack → LLM draft → grounding → gate → advisory row**) + `build_advisory_rows` (batch). RECOMMENDED ACTION + ADVISORY TYPE stay deterministic; the LLM only words headline+rationale. Injected `predict_fn`; the real driver `transform/gold_advisory.py` (gated) supplies the Databricks chat client. |
+| `eventlog.events` (+S8) | `src/common/eventlog/events.py` | `advisory_composed_event` / `compliance_checked_event` / `build_advisory_events` — timeline markers on the existing wide log (no schema ripple); full detail lives in `merchant_advisory`. |
+| `schemas.gold` (+S8) | `src/common/schemas/gold.py` | `merchant_advisory_schema()` (point-in-time). |
+| `field_maps` (+S8) | `src/common/field_maps.py` | `MERCHANT_ADVISORY_MAP` + `merchant_advisory_columns()` (grounded_refs / confidence / model_version / compliance_status / required_disclosures / review_status; no `_sf_stored_*`, no spine-math column). |
+
+Reuses `common/offer/{structure,suitability}` (the Structure Advisor articulates, never recomputes), `common/agents/grounding` pattern, the gold `_current` views (fact sources), `io.guards` (no-surface), and the four merchants. `constants` adds `AdvisoryType`/`ComplianceStatus`/`DisclosureRegime` + `DISCLOSURE_RULES` + `EventType.ADVISORY_COMPOSED`/`COMPLIANCE_CHECKED` + `GoldTable.MERCHANT_ADVISORY`(+`_CURRENT`); reused `AGENT_CONFIDENCE_REVIEW_MIN` (no duplicate thresholds — Rule 3). Consumed by `transform/gold_advisory.py` (**build gated**) writing point-in-time `gold.merchant_advisory` (+`_current`) — STORED, not delivered.
+
 ## Principles
 
 - **Schema is derived from / validated against the Data Contract xlsx** — never a parallel hand-maintained copy.
