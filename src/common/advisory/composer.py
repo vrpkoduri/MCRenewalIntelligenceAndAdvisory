@@ -33,7 +33,12 @@ from common.advisory.factpack import build_fact_pack, ungrounded_tokens
 from common.advisory.structure_advisor import advise_structure
 
 DEFAULT_ENDPOINT = "databricks-claude-sonnet-4-5"
-MODEL_VERSION = "advisory-composer/claude-sonnet-4-5/v1"
+# v2 (2026-07-18, after the gold_test sample): v1 grounded 6/8; the 2 rejects were NOT invented
+# numbers but legitimate reformatting the strict validator can't match — a percentage rounded to
+# fewer decimals ("99.7%" for 99.72) and a date paraphrased to a month name ("November 2026"). v2
+# forbids rounding/reformatting and pins date handling to exact-ISO-or-general. Version bump =
+# prompt change (audit).
+MODEL_VERSION = "advisory-composer/claude-sonnet-4-5/v2"
 
 # Concrete-offer candidate types — when composing one of these WITH an amount, the advisory names
 # a concrete term and becomes a SPECIFIC OFFER (the gate then enforces suitability + disclosure).
@@ -43,8 +48,12 @@ _SYSTEM = (
     "You are a merchant capital advisor for a merchant cash advance (MCA) brokerage. You write a "
     "SHORT, honest, merchant-facing advisory — a headline and a rationale — from a set of FACTS "
     "your firm has already computed. Absolute rules:\n"
-    "1. GROUND EVERY NUMBER. You may use ONLY the numbers given in FACTS. Never invent, estimate, "
-    "round to a different value, or introduce any figure that is not in FACTS.\n"
+    "1. GROUND EVERY NUMBER. You may use ONLY the numbers given in FACTS, and use each one EXACTLY "
+    "as written — do NOT round, truncate, re-scale, add or drop decimals, or otherwise reformat it "
+    "(e.g. do NOT turn 99.72 into 99.7, or 2590.00 into 2,590). Never invent, estimate, or compute a "
+    "new figure. For any DATE, use it EXACTLY in YYYY-MM-DD form as given, OR speak about timing in "
+    "general terms with NO specific figure — NEVER convert a date to a month name or year "
+    "(e.g. not 'November 2026').\n"
     "2. BE HONEST. If the recommended action is 'wait-and-pay-down', advise the merchant to WAIT "
     "and pay down first — do NOT pitch a new advance. 'Don't take money right now' is a valid and "
     "expected recommendation. Never imply an offer that the recommended action does not support.\n"
