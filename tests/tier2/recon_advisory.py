@@ -39,7 +39,19 @@ from transform.gold_extraction import databricks_chat_predict_fn
 # (0 invented numbers) is a HARD pipeline invariant, not a label — a hallucinated figure is REJECTED
 # before it can be stored, so this sample scores TYPE + COMPLIANCE + HONEST-ACTION correctness.
 # Left empty ⇒ the quality gate is a no-op (mirrors D-706/D-711 until the operator fills it).
-ADVISORY_LABELS: dict = {}
+# Operator-confirmed 2026-07-18 on the gold_test sample run (v2). The scored fields
+# (advisory_type + compliance_status + recommended_action) are DETERMINISTIC — the LLM only writes
+# the headline/rationale wording + confidence — so the gate is reproducible run-over-run.
+ADVISORY_LABELS: dict = {
+    "MRI-001UU00000bmPgYYAU": {"merchant": "Wolf Corporation", "advisory_type": "advice", "compliance_status": "pass", "recommended_action": "wait-and-pay-down"},
+    "MRI-0015e00000ybzC7AAI": {"merchant": "Bruno's Best Pizza", "advisory_type": "advice", "compliance_status": "pass", "recommended_action": "wait-and-pay-down"},
+    "MRI-0015e00000ybz9iAAA": {"merchant": "Family Visions Llc", "advisory_type": "advice", "compliance_status": "pass", "recommended_action": "wait-and-pay-down"},
+    "MRI-0015e00000ybzFXAAY": {"merchant": "Concrete For Less Llc", "advisory_type": "advice", "compliance_status": "pass", "recommended_action": "renewal-eligible"},
+    "MRI-0015e00000ybzGiAAI": {"merchant": "Designer Stone Solutions Inc", "advisory_type": "advice", "compliance_status": "pass", "recommended_action": "renewal-eligible"},
+    "MRI-0015e00000ybyyLAAQ": {"merchant": "Craig Humphries / Csh Electrical", "advisory_type": "factual-summary", "compliance_status": "pass", "recommended_action": None},
+    "MRI-0015e00000ybzEQAAY": {"merchant": "Valley Contracting Group Llc", "advisory_type": "factual-summary", "compliance_status": "pass", "recommended_action": None},
+    "MRI-0015e00000ybzIrAAI": {"merchant": "Praveen Buddiga Md Inc", "advisory_type": "factual-summary", "compliance_status": "pass", "recommended_action": None},
+}
 ACCURACY_BAR = 0.80
 
 
