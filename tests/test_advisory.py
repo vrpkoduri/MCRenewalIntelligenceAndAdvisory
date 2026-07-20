@@ -135,6 +135,16 @@ def test_advise_structure_cannot_unsuppress_a_suppressed_buyout():
     assert a["recommended_action"] == "wait-and-pay-down"
 
 
+def test_advise_structure_near_payoff_multi_position_is_renewal_not_buyout():
+    # C-032/D-808: 2 positions but essentially paid off -> finish/renew, never "consolidate $12".
+    # offer_type=None mirrors the v1 driver (offers gated on FU-501); the structure itself is RENEWAL.
+    near = {"est_paydown_pct": 0.999, "est_current_balance": 12.0, "factor_rate": 1.30,
+            "active_position_cnt": 2}
+    a = advise_structure(near, offer_type=None)
+    assert a["structure"] == _OS.RENEWAL
+    assert a["recommended_action"] == "renewal-eligible"  # not consider-consolidating-buyout
+
+
 def test_advise_structure_healthy_is_renewal_surface():
     a = advise_structure(HEALTHY, offer_type=_OT.RENEWAL)
     assert a["structure"] == _OS.RENEWAL

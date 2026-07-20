@@ -59,7 +59,15 @@ def test_recommend_structure_wait_when_barely_paid():
 
 
 def test_recommend_structure_buyout_when_multi_position():
-    assert recommend_structure(0.70, 2) == _OS.BUYOUT  # healthy paydown + concurrent positions
+    assert recommend_structure(0.70, 2) == _OS.BUYOUT  # mid-life paydown + concurrent positions
+
+
+def test_recommend_structure_near_payoff_never_buyout():
+    # C-032/D-808: a 2-position merchant essentially paid off (>=90%) should NOT be told to
+    # "consolidate" a near-zero balance — the honest structure is finish/renew, not buyout.
+    assert recommend_structure(0.999, 2) == _OS.RENEWAL
+    assert recommend_structure(0.90, 2) == _OS.RENEWAL  # boundary
+    assert recommend_structure(0.89, 2) == _OS.BUYOUT   # just below → still consolidation candidate
 
 
 def test_recommend_structure_renewal_single_healthy():
