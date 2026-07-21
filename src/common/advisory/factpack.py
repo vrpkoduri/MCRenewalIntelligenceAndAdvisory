@@ -60,7 +60,10 @@ def _num_variants(value) -> set[str]:
     except (TypeError, ValueError):
         return set()
     out: set[str] = set()
-    for form in (f, round(f, 2), float(round(f))):
+    # raw + cent/1-decimal/dollar-rounded — a merchant-facing "99.7%" for 99.72 or "$20,880" for
+    # 20879.9999 is the SAME number read to the merchant, not an invented one; a genuinely different
+    # figure still fails. (The composer prompt asks for verbatim numbers; this absorbs benign rounding.)
+    for form in (f, round(f, 2), round(f, 1), float(round(f))):
         n = _norm_num(form)
         if n is not None:
             out.add(n)

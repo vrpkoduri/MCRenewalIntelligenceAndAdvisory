@@ -21,6 +21,7 @@ from __future__ import annotations
 from common import constants as C
 
 _PAYDOWN_MIN = C.Thresholds.DISCIPLINED_RENEWAL_PAYDOWN_MIN  # 0.50 — the "barely paid" line
+_NEAR_PAYOFF = C.Thresholds.NEAR_PAYOFF_PAYDOWN  # 0.90 — the "essentially complete" line (C-032)
 _SERIAL_MIN = C.Thresholds.SERIAL_POSITION_MIN  # 2 — consolidation candidate
 
 
@@ -41,20 +42,28 @@ def double_dip_cost(est_current_balance, factor_rate) -> float | None:
 
 
 def recommend_structure(est_paydown_pct, active_position_cnt) -> str | None:
-    """Recommend renewal / buyout / wait-and-pay-down (D-506).
+    """Recommend renewal / buyout / wait-and-pay-down (D-506; near-payoff refinement C-032/D-808).
 
     - paydown < 50% (barely paid) → WAIT_AND_PAYDOWN: rolling now is the expensive double-dip;
       the honest move is to wait until less rolls over (Wolf, renewing ~days in).
+    - paydown ≥ 90% (essentially complete) → RENEWAL: the position is all but paid off, so a
+      consolidating buyout is pointless (it would roll the factor again on a near-zero balance) —
+      the honest structure is to finish/renew, NOT consolidate. This ceiling wins over the
+      multi-position buyout rule (C-032 — the gold_test full-book run surfaced 2-position merchants
+      99.9% paid being told to "consolidate $12", nonsensical advice).
     - else multiple concurrent positions → BUYOUT: consolidating into one cleaner facility is
-      the kinder structure for a serial merchant.
+      the kinder structure for a serial merchant mid-life with meaningful balances.
     - else (single position, healthy paydown) → RENEWAL.
 
     None when paydown is unknown (cannot decide a structure — never guess).
     """
     if est_paydown_pct is None:
         return None
-    if float(est_paydown_pct) < _PAYDOWN_MIN:
+    p = float(est_paydown_pct)
+    if p < _PAYDOWN_MIN:
         return C.OfferStructure.WAIT_AND_PAYDOWN
+    if p >= _NEAR_PAYOFF:
+        return C.OfferStructure.RENEWAL  # essentially done → finish/renew, never consolidate
     if (active_position_cnt or 0) >= _SERIAL_MIN:
         return C.OfferStructure.BUYOUT
     return C.OfferStructure.RENEWAL

@@ -651,5 +651,10 @@ class Thresholds:
     BURDEN_SERIAL_BAND = (0.15, 0.30)  # Framework 4.3
     DISCIPLINED_BURDEN_MAX = 0.15  # Framework 4.4
     DISCIPLINED_RENEWAL_PAYDOWN_MIN = 0.50  # Framework 4.4
+    NEAR_PAYOFF_PAYDOWN = 0.90  # C-032/D-808 — at/above this a position is essentially complete
+    # (≤10% remaining), so a consolidating BUYOUT is pointless (it would roll the factor again on a
+    # near-zero balance); the honest structure is RENEWAL (finish/renew), never a buyout. Feeds
+    # common/offer/structure.recommend_structure (used by S5 offers + the S8 Structure Advisor).
+    # Calibratable — the "essentially done" line.
     DORMANCY_MULTIPLIER = 2.0  # Appendix B.2 — idle > 2x median renewal gap
     SERIAL_POSITION_MIN = 2  # Appendix B.3 — concurrent positions

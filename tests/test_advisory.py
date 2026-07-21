@@ -96,6 +96,12 @@ def test_validate_grounding_accepts_grounded_text():
     assert validate_grounding(text, pack) is True
 
 
+def test_validate_grounding_accepts_one_decimal_pct_rounding():
+    # a merchant-facing "99.7%" for a stored 0.9972 paydown is the same number, not invented (v2)
+    pack = build_fact_pack({"est_paydown_pct": 0.9972, "est_current_balance": 48.6}, RUN)
+    assert validate_grounding("You've paid down 99.7% of your balance ($48.60 left).", pack) is True
+
+
 def test_validate_grounding_rejects_invented_number():
     pack = build_fact_pack(WOLF, RUN, extra={"double_dip_cost": 20880.0})
     text = "We can advance you $50,000 today."  # 50000 is not in the pack
@@ -127,6 +133,16 @@ def test_advise_structure_cannot_unsuppress_a_suppressed_buyout():
     # a barely-paid buyout candidate -> WAIT verdict -> the action stays wait-and-pay-down
     a = advise_structure(WOLF, offer_type=_OT.BUYOUT)
     assert a["recommended_action"] == "wait-and-pay-down"
+
+
+def test_advise_structure_near_payoff_multi_position_is_renewal_not_buyout():
+    # C-032/D-808: 2 positions but essentially paid off -> finish/renew, never "consolidate $12".
+    # offer_type=None mirrors the v1 driver (offers gated on FU-501); the structure itself is RENEWAL.
+    near = {"est_paydown_pct": 0.999, "est_current_balance": 12.0, "factor_rate": 1.30,
+            "active_position_cnt": 2}
+    a = advise_structure(near, offer_type=None)
+    assert a["structure"] == _OS.RENEWAL
+    assert a["recommended_action"] == "renewal-eligible"  # not consider-consolidating-buyout
 
 
 def test_advise_structure_healthy_is_renewal_surface():

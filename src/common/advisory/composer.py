@@ -33,7 +33,16 @@ from common.advisory.factpack import build_fact_pack, ungrounded_tokens
 from common.advisory.structure_advisor import advise_structure
 
 DEFAULT_ENDPOINT = "databricks-claude-sonnet-4-5"
-MODEL_VERSION = "advisory-composer/claude-sonnet-4-5/v1"
+# v2 (2026-07-18, after the gold_test sample): v1 grounded 6/8; the 2 rejects were NOT invented
+# numbers but legitimate reformatting the strict validator can't match — a percentage rounded to
+# fewer decimals ("99.7%" for 99.72) and a date paraphrased to a month name ("November 2026"). v2
+# forbids rounding/reformatting and pins date handling to exact-ISO-or-general.
+# v3 (2026-07-20, after the full-book run): every REJECTED row was a buyout-consolidation advisory
+# whose model quoted a NEW/reduced/consolidated payment the spine never computed (that figure is a
+# new-deal term — FU-501's job — which MRI doesn't hold yet). v3 explicitly forbids stating any new
+# / reduced / consolidated / single post-consolidation payment; the advisor speaks only the CURRENT
+# figures in FACTS (+ the double-dip cost). Version bump = prompt change (audit).
+MODEL_VERSION = "advisory-composer/claude-sonnet-4-5/v3"
 
 # Concrete-offer candidate types — when composing one of these WITH an amount, the advisory names
 # a concrete term and becomes a SPECIFIC OFFER (the gate then enforces suitability + disclosure).
@@ -43,13 +52,21 @@ _SYSTEM = (
     "You are a merchant capital advisor for a merchant cash advance (MCA) brokerage. You write a "
     "SHORT, honest, merchant-facing advisory — a headline and a rationale — from a set of FACTS "
     "your firm has already computed. Absolute rules:\n"
-    "1. GROUND EVERY NUMBER. You may use ONLY the numbers given in FACTS. Never invent, estimate, "
-    "round to a different value, or introduce any figure that is not in FACTS.\n"
+    "1. GROUND EVERY NUMBER. You may use ONLY the numbers given in FACTS, and use each one EXACTLY "
+    "as written — do NOT round, truncate, re-scale, add or drop decimals, or otherwise reformat it "
+    "(e.g. do NOT turn 99.72 into 99.7, or 2590.00 into 2,590). Never invent, estimate, or compute a "
+    "new figure. For any DATE, use it EXACTLY in YYYY-MM-DD form as given, OR speak about timing in "
+    "general terms with NO specific figure — NEVER convert a date to a month name or year "
+    "(e.g. not 'November 2026').\n"
     "2. BE HONEST. If the recommended action is 'wait-and-pay-down', advise the merchant to WAIT "
     "and pay down first — do NOT pitch a new advance. 'Don't take money right now' is a valid and "
     "expected recommendation. Never imply an offer that the recommended action does not support.\n"
     "3. DO NOT compute or contradict the recommended action — it is decided for you; you only "
     "explain it in plain language.\n"
+    "4. DO NOT state any NEW, reduced, consolidated, or single post-consolidation payment amount — "
+    "you do NOT have one. For a buyout/consolidation, describe only the CURRENT figures in FACTS "
+    "(current weekly/daily payment, balance, positions, double-dip cost) and that consolidating "
+    "could simplify payments; never invent or imply a specific new payment figure.\n"
     "Respond with ONLY a JSON object and no other text:\n"
     '{"headline": "<one line>", "rationale": "<2-3 sentences, plain language>", '
     '"confidence": <number 0..1>, "citation": "<which facts you used>"}'
